@@ -330,7 +330,7 @@ def get_screen_cons(headless: Optional[bool] = None) -> Optional[Screen]:
     Bounds are CSS pixels, the unit Firefox lays its windows out in -- see
     camoufox.display for why that differs from the monitor's physical size.
     """
-    if headless is False:
+    if headless is True:
         return None  # Skip if headless
     display = largest_display()
     if display is None:

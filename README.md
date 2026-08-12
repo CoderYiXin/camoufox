@@ -34,7 +34,7 @@
 <table>
   <tr>
     <td width="25%" align="center" valign="middle">
-      <a href="https://go.nodemaven.com/daijronew" target="_blank">
+      <a href="https://go.nodemaven.com/daijrogh" target="_blank">
         <img width="380" alt="nodemaven" src="https://github.com/user-attachments/assets/25015cb5-f1b4-4b49-9e9b-b74dc25037dc"/>
       </a>
     </td>

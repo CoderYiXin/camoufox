@@ -28,7 +28,33 @@
 
 <details open>
 <summary>View/Collapse All</summary>
-<br>
+
+## Premium
+
+<table>
+  <tr>
+    <td width="25%" align="center" valign="middle">
+      <a href="https://go.nodemaven.com/daijrogh" target="_blank">
+        <img width="380" alt="nodemaven" src="https://github.com/user-attachments/assets/25015cb5-f1b4-4b49-9e9b-b74dc25037dc"/>
+      </a>
+    </td>
+    <td valign="middle">
+      <a href="https://go.nodemaven.com/daijrogh">NodeMaven</a>: The most efficient proxy provider for Web Scrapping and Automation with the Highest Quality IP on the market.<br>
+      <strong>Why <a href="https://go.nodemaven.com/daijrogh">NodeMaven</a>?</strong><br>
+      • 99.9% uptime<br>
+      • ZIP Targeting<br>
+      • IP filtering: all proxies have fraud score <97%<br>
+      • No KYC required<br>
+      • Unique free tools: Proxy Bandwidth Checker, Meta Tag Checker, IP Lookup and others!<br>
+      <strong>Special codes for Camoufox users:</strong><br>
+      • <code>CAMOUFOX35</code> - 35% off to Mobile and Residential Proxies<br>
+      • <code>CAMOUFOX40</code> - 40% off to ISP (Static) Proxies<br>
+    </td>
+  </tr>
+</table>
+
+## Tools & Services
+  
 <table>
   <tr>
     <td width="25%" align="center" valign="middle">
@@ -62,17 +88,6 @@
   </tr>
   <tr>
     <td width="25%" align="center" valign="middle" height="100">
-      <a href="https://talordata.com/?campaignid=X01VSF4OOvlHfN6U&utm_source=github&utm_term=camoufox" target="_blank">
-        <img width="350" alt="color horizontal" src="https://github.com/user-attachments/assets/1f470eca-2a37-47ac-bb84-3a63339c1578"/>
-      </a>
-    </td>
-    <td valign="middle">
-      <a href="https://talordata.com/?campaignid=X01VSF4OOvlHfN6U&utm_source=github&utm_term=camoufox">Talordata</a> is a simple web search API to scrape Google and other search engines at a fraction of the cost. Get 1,000 free requests upon registration, and pay just $0.25 per 1,000 successful responses—zero charges for failed scrapes.<br>
-Use coupon code <strong>CAMOUFOX</strong> for <strong>10% OFF</strong> Residential Proxies. [<a href="https://discord.gg/dMZFyY39Fx">Discord</a>]
-    </td>
-  </tr>
-  <tr>
-    <td width="25%" align="center" valign="middle" height="100">
       <a href="https://crawlbase.com/?utm_source=github&utm_medium=sponsorship&utm_campaign=camoufox" target="_blank">
         <img width="350" alt="color horizontal" src="https://github.com/user-attachments/assets/5c515090-86c2-4c76-b7b2-6e0b393594d5"/>
       </a>
@@ -96,7 +111,7 @@ Use coupon code <strong>CAMOUFOX</strong> for <strong>10% OFF</strong> Residenti
   </tr>
 </table>
 
-## Proxy providers
+## Proxy Providers
 
 Camoufox is intended to be used with rotating proxies (preferably residential IPs). Check out these providers:
 
@@ -169,34 +184,6 @@ Camoufox is intended to be used with rotating proxies (preferably residential IP
     <td valign="middle">
       <a href="https://mangoproxy.com/?utm_source=github&utm_medium=partner&utm_campaign=daijro">MangoProxy</a> is a Residential, ISP, Mobile and Datacenter proxy service designed for professional tasks where stability, speed, and anonymity matter.<br>
       Use code DAIJRO for 8% OFF ISP Static Proxies
-    </td>
-  </tr>
-  <tr>
-    <td width="25%" align="center" valign="middle">
-      <a href="https://9proxy.com/pricing?utm_source=github&utm_medium=daijro&utm_campaign=githubdev&utm_content=sponsored" target="_blank">
-        <img width="380" alt="9proxy" src="https://github.com/user-attachments/assets/2b59c5d9-317a-488d-a723-134b7237d339"/>
-      </a>
-    </td>
-    <td valign="middle">
-      <a href="https://9proxy.com/pricing?utm_source=github&utm_medium=daijro&utm_campaign=githubdev&utm_content=sponsored">9Proxy</a> provides residential proxies from just $0.018/IP or $0.68/GB. 20M+ IPs across 90+ countries. Sticky or rotating sessions, managed from desktop or mobile app.<br>
-    </td>
-  </tr>
-  <tr>
-    <td width="25%" align="center" valign="middle">
-      <a href="https://go.nodemaven.com/daijronew" target="_blank">
-        <img width="380" alt="nodemaven" src="https://github.com/user-attachments/assets/49608eb7-7c1b-4904-bdf8-53e69c7eda8c"/>
-      </a>
-    </td>
-    <td valign="middle">
-      <a href="https://go.nodemaven.com/daijronew">NodeMaven</a>: The most reliable proxy provider with the Highest Quality IP on the market.<br>
-      Best solution for automation, web scraping, SEO research, and social media management.<br>
-      <a href="https://go.nodemaven.com/daijronew">NodeMaven</a> offers:<br>
-      • Sticky sessions up to 7 days<br>
-      • 99.9% uptime<br>
-      • IP filtering: all proxies have fraud score <97%<br>
-      • No KYC required<br>
-      • Cashback on traffic - burn GB and earn up to 10% back<br>
-Special offer: Use code CAMOUFOX35 to get 35% discount on Proxies.
     </td>
   </tr>
   <tr>

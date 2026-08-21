@@ -111,12 +111,12 @@
   </tr>
   <tr>
     <td width="25%" align="center" valign="middle">
-      <a href="https://cloro.dev" target="_blank">
+      <a href="https://cloro.dev/?utm_source=referral&utm_medium=camoufox" target="_blank">
         <img width="380" alt="Cloro" src="https://github.com/user-attachments/assets/6dce6615-9733-43e3-8c6d-8d3bfb1aa7c7" />
       </a>
     </td>
     <td valign="middle">
-      <a href="https://cloro.dev">Cloro</a> is a SERP and AI search API. Get structured results from Google, ChatGPT, Perplexity, Gemini, Copilot and Grok.
+      <a href="https://cloro.dev/?utm_source=referral&utm_medium=camoufox">Cloro</a> is a SERP and AI search API. Get structured results from Google, ChatGPT, Perplexity, Gemini, Copilot and Grok.
     </td>
   </tr>
 </table>

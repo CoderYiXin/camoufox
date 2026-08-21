@@ -209,6 +209,17 @@ Camoufox is intended to be used with rotating proxies (preferably residential IP
       Start now: <a href="https://proxidize.com/?utm_source=github&utm_medium=sponsorship&utm_campaign=camoufox&utm_content=daijro">https://proxidize.com</a>
     </td>
   </tr>
+  <tr>
+    <td width="25%" align="center" valign="middle">
+      <a href="https://niuproxy.com/?utm_source=camoufox&utm_medium=camoufox&ref=camoufox" target="_blank">
+        <img width="380" alt="NiuProxy" src="https://github.com/user-attachments/assets/d1fc12cc-4113-4a8e-a7d3-e34df6c93731"/>
+      </a>
+    </td>
+    <td valign="middle">
+      <a href="https://niuproxy.com/?utm_source=camoufox&utm_medium=camoufox&ref=camoufox">NiuProxy</a> Rotating Residential Proxies - Special Offer: 10TB at $0.35/GB | 1TB at $0.50/GB.<br>Use code PAY2 for 10% off your recharge.<br>
+    </td>
+  </tr>
+  <tr>
 </table>
 </details>
 

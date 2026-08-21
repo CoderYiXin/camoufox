@@ -109,6 +109,16 @@
       <a href="https://scrappey.com/?utm_source=camoufox&utm_medium=sponsorship&utm_campaign=camoufox_sponsorship">Scrappey</a> is a Web Scraping API that only charges successful scrapes with pay as you go - no subscriptions. Scrape complex sites. Residential proxies included, no hidden proxy fees, or expiring balances. One API for direct HTTP, full-browser rendering, JavaScript-heavy pages, screenshots, sessions, 30+ browser actions and 200+ concurrent sessions at a time - trusted by 1000+ developers and AI agents. Get 10% off with code CAMOUFOX.
     </td>
   </tr>
+  <tr>
+    <td width="25%" align="center" valign="middle">
+      <a href="https://cloro.dev" target="_blank">
+        <img width="380" alt="Cloro" src="https://github.com/user-attachments/assets/6dce6615-9733-43e3-8c6d-8d3bfb1aa7c7" />
+      </a>
+    </td>
+    <td valign="middle">
+      <a href="https://cloro.dev">Cloro</a> is a SERP and AI search API. Get structured results from Google, ChatGPT, Perplexity, Gemini, Copilot and Grok.
+    </td>
+  </tr>
 </table>
 
 ## Proxy Providers
@@ -151,7 +161,7 @@ Camoufox is intended to be used with rotating proxies (preferably residential IP
       • 🌍 90M+ IPs in 200+ countries & regions<br>
       • ♾️ No expiration on traffic — use anytime, no pressure<br>
       • 🔥 Unlimited concurrency for maximum performance<br>
-      • 💰 Starting from just $0.65/GB — built for scale<br>
+      • 💰 Starting from just &#36;0.65/GB — built for scale<br>
       • 📍 City-level targeting for precise geo access<br>
       • 🔄 Flexible session control tailored to your needs<br>
       Don’t miss out — start your free trial today and experience fast, stable, and scalable proxy performance with <a href="https://www.rapidproxy.io/?ref=daijro">RapidProxy</a>.
@@ -216,7 +226,18 @@ Camoufox is intended to be used with rotating proxies (preferably residential IP
       </a>
     </td>
     <td valign="middle">
-      <a href="https://niuproxy.com/?utm_source=camoufox&utm_medium=camoufox&ref=camoufox">NiuProxy</a> Rotating Residential Proxies - Special Offer: 10TB at $0.35/GB | 1TB at $0.50/GB.<br>Use code PAY2 for 10% off your recharge.<br>
+      <strong><a href="https://niuproxy.com/?utm_source=camoufox&utm_medium=camoufox&ref=camoufox">NiuProxy</a> | Rotating Residential Proxies from &#36;0.35/GB<br></strong>
+      NiuProxy provides residential, ISP, mobile, and datacenter proxies for scraping, browser automation, SEO, AI agents, and data collection.<br>
+      <strong>Why NiuProxy?</strong><br>
+      • Residential proxies from &#36;0.35/GB<br>
+      • ISP proxies from &#36;3/IP<br>
+      • Mobile proxies from &#36;1.5/GB<br>
+      • Datacenter proxies from &#36;0.5/GB<br>
+      • HTTP(S) & SOCKS5 support<br>
+      • Flexible geo targeting and sessions<br>
+      • Alipay, USDT, cards, Google Pay & Apple Pay<br>
+      Special offer for Camoufox users: Use code PAY2 for 10% off your recharge.<br>
+      Start now: <a href="https://niuproxy.com/?utm_source=camoufox&utm_medium=camoufox&ref=camoufox">https://niuproxy.com</a>
     </td>
   </tr>
   <tr>
@@ -303,47 +324,6 @@ async with AsyncCamoufox() as browser:
 ```
 
 [[Installation & usage](https://camoufox.com/python/)]
-
-### Making Full use of Hardware Spoofing
-
-For stable releases, you should always use the main [`camoufox`](https://pypi.org/project/camoufox/) pip package. However, if you want to make use of per-context fingerprints and hardware spoofing, use the [`cloverlabs-camoufox`](https://pypi.org/project/cloverlabs-camoufox/) package. This package is updated with each releases, whereas the official package is released on delay.
-
-Make sure you are using a virtual env to avoid conflicts between the two packages.
-
-**Installation**
-
-```bash
-pip install cloverlabs-camoufox
-```
-
-**Fetch the latest prerelease browser** (recommended for newest patches)
-
-```bash
-python -m camoufox sync
-python -m camoufox set official/prerelease
-python -m camoufox fetch
-```
-
-**Usage** — the API is identical to the upstream package:
-
-```python
-from camoufox.sync_api import Camoufox
-
-with Camoufox() as browser:
-    page = browser.new_page()
-    page.goto("https://example.com")
-```
-
-#### Real fingerprint presets (recommended for v149+ binaries)
-
-By default, fingerprint values are synthesized by BrowserForge. For better evasion against complex consistency checks, opt into the bundled presets — real fingerprints scraped from in-the-wild Firefox traffic:
-
-```python
-with Camoufox(fingerprint_preset=True, os="macos") as browser:
-    ...
-```
-
-The library auto-routes by binary version: Firefox ≥ 149 loads `fingerprint-presets-v150.json` (312 presets covering v149–v152, 67 macOS / 180 Windows / 65 Linux); older binaries fall back to the original bundle. UA strings are rewritten to match the active binary, so opting in is safe across versions. Pass a preset dict instead of `True` to pin a specific fingerprint.
 
 ---
 

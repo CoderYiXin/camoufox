@@ -241,6 +241,23 @@ Camoufox is intended to be used with rotating proxies (preferably residential IP
     </td>
   </tr>
   <tr>
+    <td width="25%" align="center" valign="middle">
+      <a href="https://www.thordata.com/?ls=dcx&lk=dcx" target="_blank">
+        <img width="380" alt="Thordata" src="https://github.com/user-attachments/assets/0476bd5a-0063-4c31-8dc2-d3f982d58e6c"/>
+      </a>
+    </td>
+    <td valign="middle">
+      <b>🔍 Camoufox × Thordata</b><br>
+      <b>Real Residential IPs for Smarter AI Agents & Automation</b><br>
+      With <strong>100M+ residential IPs</strong>, Thordata helps your scraper access the web through real user IPs across <strong>195+ countries</strong>.<br>
+      Target specific locations with precision — including <strong>city, ISP, and ASN-level targeting</strong> — so your Camoufox automation runs with a more authentic network identity.<br>
+      • 🔄 <strong>Rotating & Sticky Sessions</strong> (up to 90 minutes)<br>
+      • ⚡ <strong>99.99% uptime</strong> with unlimited concurrent sessions<br>
+      • 🌍 <strong>Global residential coverage</strong> for AI agents, scraping, and automation workflows<br>
+      🎁 <strong>Exclusive for Camoufox users:</strong><br>
+      Get free trial traffic after signup + use code <strong>Camoufox</strong> for <strong>10% OFF</strong>.<br>
+      <a href="https://www.thordata.com/?ls=dcx&lk=dcx" target="_blank">Start your free trial with Thordata</a>
+  </tr>
 </table>
 </details>
 

@@ -21,7 +21,7 @@ from .exceptions import (
     InvalidPropertyType,
     NonFirefoxFingerprint,
 )
-from .fingerprints import from_browserforge, from_preset, generate_fingerprint, get_random_preset, _generate_random_font_subset, _generate_random_voice_subset, fix_navigator_arch, fix_screen_no_taskbar, clamp_screen_to_display, clamp_window_dimensions, clamp_window_position, set_media_devices_defaults
+from .fingerprints import from_browserforge, from_preset, generate_fingerprint, get_random_preset, _generate_random_font_subset, _generate_random_voice_subset, fix_navigator_arch, fix_screen_no_taskbar, clamp_screen_to_display, clamp_window_dimensions, clamp_window_position, raise_screen_to_modern_floor, sample_webgl_for_screen, set_media_devices_defaults
 from .geolocation import geoip_allowed, get_geolocation
 from .ip import Proxy, public_ip, valid_ipv4, valid_ipv6
 from .locales import handle_locales
@@ -741,6 +741,16 @@ def launch_options(
     if not _user_set_navigator:
         fix_navigator_arch(config, target_os)
     if not _user_set_screen_window:
+        # Lift netbook-era geometry to something current hardware reports,
+        # before the display clamp below so a genuinely small real monitor
+        # still wins (#729). Synthetic draws only: a preset is a real device,
+        # internally consistent by construction, and two of the bundled v150
+        # presets genuinely report sub-netbook screens (736x414, 960x540).
+        # Rewriting those to 1366x768 would break the very coherence #729 is
+        # about, and _user_set_screen_window is read before the preset merges
+        # in, so it does not cover this.
+        if not _used_preset:
+            raise_screen_to_modern_floor(config)
         # Headful on a real monitor only: this bound exists so the window fits
         # the screen it is drawn on. headless has no window to overflow, and
         # headless='virtual' reaches here as headless=False (see async_api) with
@@ -897,7 +907,13 @@ def launch_options(
             # Preset already set vendor/renderer — sample matching WebGL params
             webgl_fp = sample_webgl(target_os, config['webGl:vendor'], config['webGl:renderer'])
         else:
-            webgl_fp = sample_webgl(target_os)
+            # Synthetic path: keep the GPU coherent with the screen BrowserForge
+            # already picked. Sampling the two independently yields pairs no
+            # real machine ships -- a discrete desktop GPU behind a 1024x600
+            # panel -- which consistency checks read as masking (#729).
+            webgl_fp = sample_webgl_for_screen(
+                target_os, config.get('screen.width'), config.get('screen.height')
+            )
         enable_webgl2 = webgl_fp.pop('webGl2Enabled')
 
         # Merge the WebGL fingerprint into the config

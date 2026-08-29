@@ -21,7 +21,7 @@ from .exceptions import (
     InvalidPropertyType,
     NonFirefoxFingerprint,
 )
-from .fingerprints import from_browserforge, from_preset, generate_fingerprint, get_random_preset, _generate_random_font_subset, _generate_random_voice_subset, fix_navigator_arch, fix_screen_no_taskbar, clamp_screen_to_display, clamp_window_dimensions, clamp_window_position, set_media_devices_defaults
+from .fingerprints import from_browserforge, from_preset, generate_fingerprint, get_random_preset, _generate_random_font_subset, _generate_random_voice_subset, fix_navigator_arch, fix_screen_no_taskbar, clamp_screen_to_display, clamp_window_dimensions, clamp_window_position, raise_screen_to_modern_floor, sample_webgl_for_screen, set_media_devices_defaults
 from .geolocation import geoip_allowed, get_geolocation
 from .ip import Proxy, public_ip, valid_ipv4, valid_ipv6
 from .locales import handle_locales
@@ -170,6 +170,9 @@ def validate_config(config_map: Dict[str, str], path: Optional[Path] = None) -> 
                 f"Invalid type for property {key}. Expected {expected_type}, got {type(value).__name__}"
             )
 
+        if key == 'voices':
+            validate_voices(value)
+
 
 def validate_type(value: Any, expected_type: str) -> bool:
     """
@@ -193,6 +196,38 @@ def validate_type(value: Any, expected_type: str) -> bool:
         return isinstance(value, dict)
     else:
         return False
+
+
+# The five fields MaskConfig::MVoices() requires of every `voices` entry. It
+# skips anything missing one of them, so a bare "Name:lang:type" string or a
+# half-filled object registers nothing -- and a voice list that registers
+# nothing leaves the host's native voices exposed. Reject the bad shape here,
+# before launch, instead of letting it degrade silently in the browser (#731).
+VOICE_FIELDS: Tuple[str, ...] = ('lang', 'name', 'voiceUri', 'isDefault', 'isLocalService')
+
+
+def validate_voices(voices: Any) -> None:
+    """
+    Validates that every `voices` entry is a complete voice object.
+    """
+    if not isinstance(voices, list):
+        raise InvalidPropertyType(
+            f"Invalid type for property voices. Expected array, got {type(voices).__name__}"
+        )
+
+    for index, voice in enumerate(voices):
+        if not isinstance(voice, dict):
+            raise InvalidPropertyType(
+                f"Invalid voices[{index}]: expected an object with "
+                f"{{{', '.join(VOICE_FIELDS)}}}, got {type(voice).__name__} "
+                f"({voice!r}). Camoufox needs full voice objects, not names."
+            )
+        missing = [field for field in VOICE_FIELDS if field not in voice]
+        if missing:
+            raise InvalidPropertyType(
+                f"Invalid voices[{index}]: missing {', '.join(missing)}. "
+                f"Every voice needs {{{', '.join(VOICE_FIELDS)}}}."
+            )
 
 
 def get_target_os(config: Dict[str, Any]) -> Literal['mac', 'win', 'lin']:
@@ -706,6 +741,16 @@ def launch_options(
     if not _user_set_navigator:
         fix_navigator_arch(config, target_os)
     if not _user_set_screen_window:
+        # Lift netbook-era geometry to something current hardware reports,
+        # before the display clamp below so a genuinely small real monitor
+        # still wins (#729). Synthetic draws only: a preset is a real device,
+        # internally consistent by construction, and two of the bundled v150
+        # presets genuinely report sub-netbook screens (736x414, 960x540).
+        # Rewriting those to 1366x768 would break the very coherence #729 is
+        # about, and _user_set_screen_window is read before the preset merges
+        # in, so it does not cover this.
+        if not _used_preset:
+            raise_screen_to_modern_floor(config)
         # Headful on a real monitor only: this bound exists so the window fits
         # the screen it is drawn on. headless has no window to overflow, and
         # headless='virtual' reaches here as headless=False (see async_api) with
@@ -747,13 +792,32 @@ def launch_options(
         except Exception:
             update_fonts(config, target_os)
 
-    # Generate a unique random voice subset
+    # Spoof the speech-synthesis voice list.
+    #
+    # This has to fail CLOSED. Firefox registers the host's speech-dispatcher /
+    # SAPI / NSSpeech voices unless something stops it, and nsSynthVoiceRegistry
+    # only stops it when Camoufox owns the list. Leaving `voices` unset -- which
+    # the old `except Exception: pass` did on any generation failure -- exposed
+    # every native voice on the box (14805 espeak-ng entries on a stock Linux
+    # install) under a fingerprint claiming macOS or Windows: it both leaks the
+    # real host OS and contradicts the rest of the profile (#731).
     if 'voices' not in config:
         os_name_v = {'win': 'windows', 'mac': 'macos', 'lin': 'linux'}.get(target_os, 'macos')
         try:
-            config['voices'] = _generate_random_voice_subset(os_name_v)
+            config['voices'] = _generate_random_voice_subset(
+                os_name_v, config.get('navigator.language')
+            )
         except Exception:
-            pass
+            # An empty list still blocks the host's voices (see below), so a
+            # generation failure degrades to "no voices" rather than "all of
+            # the host's".
+            config['voices'] = []
+
+    # Pin the block explicitly instead of relying on a non-empty list to imply
+    # it, so an empty list -- or one whose entries the browser rejects as
+    # malformed -- cannot fall through to the host's native voices. set_into
+    # leaves an explicit caller value alone.
+    set_into(config, 'voices:blockIfNotDefined', True)
 
     # Default mediaDevices to one mic + one camera so headless contexts don't
     # expose an empty enumerateDevices() list (a headless tell).
@@ -843,7 +907,13 @@ def launch_options(
             # Preset already set vendor/renderer — sample matching WebGL params
             webgl_fp = sample_webgl(target_os, config['webGl:vendor'], config['webGl:renderer'])
         else:
-            webgl_fp = sample_webgl(target_os)
+            # Synthetic path: keep the GPU coherent with the screen BrowserForge
+            # already picked. Sampling the two independently yields pairs no
+            # real machine ships -- a discrete desktop GPU behind a 1024x600
+            # panel -- which consistency checks read as masking (#729).
+            webgl_fp = sample_webgl_for_screen(
+                target_os, config.get('screen.width'), config.get('screen.height')
+            )
         enable_webgl2 = webgl_fp.pop('webGl2Enabled')
 
         # Merge the WebGL fingerprint into the config

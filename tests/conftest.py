@@ -42,12 +42,36 @@ Patch playwright to not rely on module path for assets.
 original_get_file_dirname = playwright._impl._path_utils.get_file_dirname
 
 
+def _run_in_the_pages_own_world() -> None:
+    """Run this suite in the page's world rather than Camoufox's isolated one.
+
+    This is upstream Playwright's conformance suite, so it asserts upstream
+    semantics: tests read globals their own page scripts defined, and pass
+    element handles into evaluate(). Camoufox evaluates in an isolated world by
+    default -- the reason this fork exists -- and about 37 of these tests fail
+    on "X is not defined" for a global the page really did set.
+
+    The `mw:` prefix cannot stand in for this. It refuses handles by design
+    (Runtime.js), and much of this suite needs them. So isolation is turned off
+    for this suite alone. Camoufox's isolated-world behaviour keeps its own
+    coverage in tests/patches/isolated-evaluate.py, which must go on passing
+    without this flag -- that is the file to check if isolation regresses, not
+    this one.
+    """
+    raw = os.environ.get("CAMOU_CONFIG")
+    camou_config = json.loads(raw) if raw else {}
+    camou_config["disableWorldIsolation"] = True
+    os.environ["CAMOU_CONFIG"] = json.dumps(camou_config)
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config):
     def patched_get_file_dirname():
         return _dirname
 
     playwright._impl._path_utils.get_file_dirname = patched_get_file_dirname
+
+    _run_in_the_pages_own_world()
 
 
 @pytest.hookimpl(trylast=True)

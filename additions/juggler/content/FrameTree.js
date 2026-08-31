@@ -561,6 +561,24 @@ class Frame {
   }
 
   _createIsolatedContext(name, useMaster = false) {
+    // Camoufox: run the default world as the page's own world -- upstream
+    // Playwright semantics, where evaluate() sees page globals and can hand back
+    // real handles.
+    //
+    // This gives up the property the fork exists for: automation JS becomes
+    // visible to the page again. It is here so the vendored Playwright
+    // conformance suite can run against upstream semantics (tests/conftest.py);
+    // it is not a scraping mode. Camoufox's own isolation is covered by
+    // tests/patches/isolated-evaluate.py, which must keep running without it.
+    if (!name && ChromeUtils.camouGetBool('disableWorldIsolation', false)) {
+      const domWindow = this.domWindow();
+      const world = this._runtime.createExecutionContext(domWindow, domWindow, {
+        frameId: this.id(),
+        name,
+      });
+      this._worldNameToContext.set(name, world);
+      return world;
+    }
     let sandbox;
     if (useMaster && ChromeUtils.camouGetBool('forceScopeAccess', false)) {
       sandbox = this._getMasterSandbox();

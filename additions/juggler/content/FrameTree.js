@@ -11,6 +11,30 @@ const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js'
 
 const helper = new Helper();
 
+// Camoufox: Playwright's InitScript constructor wraps every body it is given:
+//
+//   (() => {
+//         <source>
+//       })();
+//
+// so a caller's leading `mw:` ends up *inside* the arrow function, where it is a
+// label statement -- valid JavaScript that parses, runs, and does nothing. That
+// is why the prefix appeared to be accepted on init scripts while changing
+// nothing (#738). Match the prefix in both positions: wrapped, as Playwright
+// sends it, and bare, as a direct Juggler client would.
+const INIT_SCRIPT_WRAPPER = /^\s*\(\(\)\s*=>\s*\{([\s\S]*)\}\)\(\);?\s*$/;
+const MAIN_WORLD_PREFIX = 'mw:';
+
+// Returns the script with the prefix stripped when it asks for the main world,
+// or null when it is an ordinary init script.
+function mainWorldInitScript(script) {
+  const wrapped = INIT_SCRIPT_WRAPPER.exec(script);
+  const body = (wrapped ? wrapped[1] : script).trimStart();
+  if (!body.startsWith(MAIN_WORLD_PREFIX))
+    return null;
+  return body.slice(MAIN_WORLD_PREFIX.length);
+}
+
 export class FrameTree {
   constructor(rootBrowsingContext) {
     helper.decorateAsEventEmitter(this);
@@ -537,6 +561,24 @@ class Frame {
   }
 
   _createIsolatedContext(name, useMaster = false) {
+    // Camoufox: run the default world as the page's own world -- upstream
+    // Playwright semantics, where evaluate() sees page globals and can hand back
+    // real handles.
+    //
+    // This gives up the property the fork exists for: automation JS becomes
+    // visible to the page again. It is here so the vendored Playwright
+    // conformance suite can run against upstream semantics (tests/conftest.py);
+    // it is not a scraping mode. Camoufox's own isolation is covered by
+    // tests/patches/isolated-evaluate.py, which must keep running without it.
+    if (!name && ChromeUtils.camouGetBool('disableWorldIsolation', false)) {
+      const domWindow = this.domWindow();
+      const world = this._runtime.createExecutionContext(domWindow, domWindow, {
+        frameId: this.id(),
+        name,
+      });
+      this._worldNameToContext.set(name, world);
+      return world;
+    }
     let sandbox;
     if (useMaster && ChromeUtils.camouGetBool('forceScopeAccess', false)) {
       sandbox = this._getMasterSandbox();
@@ -594,7 +636,7 @@ class Frame {
     // page.evaluate() lands; Playwright's own utility world has no business
     // reaching into the page.
     if (!name && ChromeUtils.camouGetBool('allowMainWorld', false))
-      world.enableMainWorld(this.domWindow());
+      world.enableMainWorld(() => this.domWindow());
     this._worldNameToContext.set(name, world);
     return world;
   }
@@ -659,7 +701,7 @@ class Frame {
       for (const [name, script] of world._bindings)
         executionContext.addBinding(name, script);
       for (const script of world._scriptsToEvaluateOnNewDocument)
-        executionContext.evaluateScriptSafely(script);
+        this._evaluateInitScript(executionContext, script);
     }
 
     const url = this.domWindow().location?.href;
@@ -670,6 +712,37 @@ class Frame {
     }
 
     this._updateJavaScriptDisabled();
+  }
+
+  // Camoufox: run an init script in the world it asked for.
+  //
+  // Init scripts land in the default world, which is a sandbox the page cannot
+  // see -- so a script meant to patch what a *site* observes silently patched
+  // nothing, while page.evaluate() read it back happily from the sandbox and
+  // every automation-side check kept reporting success (#738). The `mw:` prefix
+  // is the same opt-in page.evaluate() already has (Runtime.js).
+  //
+  // Refusals here are loud on purpose. evaluateScriptSafely() routes everything
+  // into dump(), so a dropped script is invisible; for a spoofing tool, silently
+  // not spoofing is the worst failure available.
+  _evaluateInitScript(executionContext, script) {
+    const mainWorldSource = mainWorldInitScript(script);
+    if (mainWorldSource === null) {
+      executionContext.evaluateScriptSafely(script);
+      return;
+    }
+    if (!ChromeUtils.camouGetBool('allowMainWorld', false)) {
+      dump('JUGGLER: init script requested the main world with "mw:", but main ' +
+           'world access is off. Launch with main_world_eval=True. Script NOT run.\n');
+      return;
+    }
+    const mainWorldContext = executionContext.mainWorldContext();
+    if (!mainWorldContext) {
+      dump('JUGGLER: init script requested the main world, but this world has no ' +
+           'main-world twin. Script NOT run.\n');
+      return;
+    }
+    mainWorldContext.evaluateScriptSafely(mainWorldSource);
   }
 
   _updateJavaScriptDisabled() {

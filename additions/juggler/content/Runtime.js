@@ -633,7 +633,7 @@ class ExecutionContext {
     this._auxData = auxData;
     // Camoufox: set by FrameTree on the default world when `allowMainWorld` is
     // on; see mainWorldContext().
-    this._mainWorldGlobal = null;
+    this._resolveMainWorldGlobal = null;
     this._mainWorldContext = null;
     this._jsonStringifyObject = this._debuggee.executeInGlobal(`((stringify, object) => {
       const oldToJSON = Date.prototype?.toJSON;
@@ -672,20 +672,36 @@ class ExecutionContext {
     return !!this._auxData.name;
   }
 
-  // Camoufox: opt this world into the `mw:` escape hatch by handing it the
-  // page's own global.
-  enableMainWorld(domWindow) {
-    this._mainWorldGlobal = domWindow;
+  // Camoufox: opt this world into the `mw:` escape hatch.
+  //
+  // The page's global arrives as a getter, not a value. Init scripts run from
+  // _onGlobalObjectCleared(), and the global reachable at that moment is not
+  // always the one the document settles on -- capturing it there sent main-world
+  // init scripts into a global nothing ever read, which looked like a race
+  // rather than a bug (#738). Reading it back on each use is what makes the
+  // main world reliable for init scripts.
+  enableMainWorld(resolveDomWindow) {
+    this._resolveMainWorldGlobal = resolveDomWindow;
   }
 
   // Camoufox: the context `mw:` scripts run in, built on first use. Building it
   // lazily keeps the page's own global out of the debuggee set entirely for
   // sessions that never use `mw:`, even with the flag on.
   mainWorldContext() {
-    if (!this._mainWorldGlobal)
+    if (!this._resolveMainWorldGlobal)
       return null;
+    const domWindow = this._resolveMainWorldGlobal();
+    if (!domWindow)
+      return null;
+    // Rebuild if the document swapped its global since the twin was built.
+    // Evaluating into the superseded one throws or writes where nothing reads,
+    // and evaluateScriptSafely() swallows both.
+    if (this._mainWorldContext && this._mainWorldContext._contextGlobal !== domWindow) {
+      this._runtime._destroyMainWorldContext(this._mainWorldContext);
+      this._mainWorldContext = null;
+    }
     if (!this._mainWorldContext) {
-      this._mainWorldContext = new ExecutionContext(this._runtime, this._mainWorldGlobal, this._mainWorldGlobal, {
+      this._mainWorldContext = new ExecutionContext(this._runtime, domWindow, domWindow, {
         frameId: this._auxData.frameId,
         name: '',
       });

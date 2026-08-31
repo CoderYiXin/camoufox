@@ -755,6 +755,22 @@ def installed_verstr() -> str:
     return Version.from_path(active).full_string
 
 
+def _root_install_supported() -> bool:
+    """
+    Whether INSTALL_DIR's root holds a supported build.
+
+    Only the pre-multiversion flat layout wrote version.json at the root; the
+    versioned layout keeps it under browsers/<repo>/<version>/. A missing root
+    version.json means "no legacy install here", so the caller should fall
+    through to a fetch rather than raise. The alpha.1 floor masked this: no
+    install was ever unsupported, so this branch was never reached.
+    """
+    try:
+        return Version.from_path().is_supported()
+    except FileNotFoundError:
+        return False
+
+
 def camoufox_path(download_if_missing: bool = True) -> Path:
     """
     Full path to the active camoufox folder
@@ -787,7 +803,7 @@ def camoufox_path(download_if_missing: bool = True) -> Path:
                 f"{active_display} is not installed. " f"Please run `camoufox fetch` to install."
             )
 
-    elif os.path.exists(INSTALL_DIR) and Version.from_path().is_supported():
+    elif os.path.exists(INSTALL_DIR) and _root_install_supported():
         return INSTALL_DIR
 
     else:

@@ -367,7 +367,7 @@ class Version:
         return self.sorted_rel < other.sorted_rel
 
     def is_supported(self) -> bool:
-        return VERSION_MIN <= self < VERSION_MAX
+        return effective_version_min() <= self < VERSION_MAX
 
     @staticmethod
     def from_path(path: Optional[Path] = None) -> 'Version':
@@ -404,6 +404,34 @@ class Version:
 
 
 VERSION_MIN, VERSION_MAX = Version.build_minmax()
+
+
+def _resolved_playwright_version() -> Optional[Tuple[int, ...]]:
+    """The installed Playwright version, or None if it cannot be determined."""
+    from importlib.metadata import version
+
+    try:
+        return _parse_semver(version('playwright'))
+    except Exception:
+        return None
+
+
+def effective_version_min() -> 'Version':
+    """The lowest browser build this install can actually talk to.
+
+    VERSION_MIN, raised by whatever the resolved Playwright requires. When the
+    Playwright version cannot be read we fall back to VERSION_MIN rather than
+    assuming the worst: a spurious forced re-download is worse than leaving a
+    working install alone, and pyproject caps Playwright anyway.
+    """
+    floor = VERSION_MIN
+    playwright_version = _resolved_playwright_version()
+    if playwright_version is None:
+        return floor
+    for required_playwright, build in CONSTRAINTS.PLAYWRIGHT_BROWSER_FLOORS:
+        if playwright_version >= required_playwright and floor < Version(build=build):
+            floor = Version(build=build)
+    return floor
 
 
 class GitHubDownloader:

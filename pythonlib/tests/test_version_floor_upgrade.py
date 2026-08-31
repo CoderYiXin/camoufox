@@ -119,3 +119,49 @@ def test_unsatisfiable_floor_reports_instead_of_recursing(tmp_path, monkeypatch)
         pkgman.camoufox_path()
 
     assert attempts == [True], "should fetch once, not spin"
+
+
+class TestConditionalFloor:
+    """The browser floor is keyed on the resolved Playwright, not fixed.
+
+    A flat floor can only speak about the browser, so to be safe it has to
+    assume the worst Playwright and re-download for everyone -- and it makes
+    the library unusable until the matching browser release exists. Keyed on
+    Playwright, only the pairing that actually breaks gets moved.
+    """
+
+    @staticmethod
+    def _with_playwright(monkeypatch, version):
+        parsed = pkgman._parse_semver(version) if version else None
+        monkeypatch.setattr(pkgman, "_resolved_playwright_version", lambda: parsed)
+
+    @pytest.mark.parametrize("version", ["1.53.0", "1.60.0"])
+    def test_old_playwright_leaves_older_builds_alone(self, monkeypatch, version):
+        """<1.61 never sends the fields beta.29 rejects, so nothing must move."""
+        self._with_playwright(monkeypatch, version)
+        assert pkgman.effective_version_min() == pkgman.Version(build="alpha.1")
+
+    @pytest.mark.parametrize("version", ["1.61.0", "1.62.0"])
+    def test_new_playwright_raises_the_floor(self, monkeypatch, version):
+        self._with_playwright(monkeypatch, version)
+        assert pkgman.effective_version_min() == pkgman.Version(build="beta.30")
+
+    def test_unreadable_playwright_falls_back_permissive(self, monkeypatch):
+        """A spurious forced re-download is worse than leaving a working install."""
+        self._with_playwright(monkeypatch, None)
+        assert pkgman.effective_version_min() == pkgman.Version(build="alpha.1")
+
+    def test_old_playwright_keeps_a_below_floor_install(self, tmp_path, monkeypatch):
+        _install(tmp_path, monkeypatch, "versioned", build="beta.29", floor="alpha.1")
+        self._with_playwright(monkeypatch, "1.60.0")
+
+        resolved = pkgman.camoufox_path(download_if_missing=False)
+
+        assert resolved.name == "152.0.4-beta.29"
+
+    def test_new_playwright_moves_a_below_floor_install(self, tmp_path, monkeypatch):
+        _install(tmp_path, monkeypatch, "versioned", build="beta.29", floor="alpha.1")
+        self._with_playwright(monkeypatch, "1.62.0")
+
+        with pytest.raises(UnsupportedVersion):
+            pkgman.camoufox_path(download_if_missing=False)

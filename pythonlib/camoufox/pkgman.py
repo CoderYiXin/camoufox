@@ -367,7 +367,7 @@ class Version:
         return self.sorted_rel < other.sorted_rel
 
     def is_supported(self) -> bool:
-        return VERSION_MIN <= self < VERSION_MAX
+        return effective_version_min() <= self < VERSION_MAX
 
     @staticmethod
     def from_path(path: Optional[Path] = None) -> 'Version':
@@ -404,6 +404,34 @@ class Version:
 
 
 VERSION_MIN, VERSION_MAX = Version.build_minmax()
+
+
+def _resolved_playwright_version() -> Optional[Tuple[int, ...]]:
+    """The installed Playwright version, or None if it cannot be determined."""
+    from importlib.metadata import version
+
+    try:
+        return _parse_semver(version('playwright'))
+    except Exception:
+        return None
+
+
+def effective_version_min() -> 'Version':
+    """The lowest browser build this install can actually talk to.
+
+    VERSION_MIN, raised by whatever the resolved Playwright requires. When the
+    Playwright version cannot be read we fall back to VERSION_MIN rather than
+    assuming the worst: a spurious forced re-download is worse than leaving a
+    working install alone, and pyproject caps Playwright anyway.
+    """
+    floor = VERSION_MIN
+    playwright_version = _resolved_playwright_version()
+    if playwright_version is None:
+        return floor
+    for required_playwright, build in CONSTRAINTS.PLAYWRIGHT_BROWSER_FLOORS:
+        if playwright_version >= required_playwright and floor < Version(build=build):
+            floor = Version(build=build)
+    return floor
 
 
 class GitHubDownloader:
@@ -755,6 +783,22 @@ def installed_verstr() -> str:
     return Version.from_path(active).full_string
 
 
+def _root_install_supported() -> bool:
+    """
+    Whether INSTALL_DIR's root holds a supported build.
+
+    Only the pre-multiversion flat layout wrote version.json at the root; the
+    versioned layout keeps it under browsers/<repo>/<version>/. A missing root
+    version.json means "no legacy install here", so the caller should fall
+    through to a fetch rather than raise. The alpha.1 floor masked this: no
+    install was ever unsupported, so this branch was never reached.
+    """
+    try:
+        return Version.from_path().is_supported()
+    except FileNotFoundError:
+        return False
+
+
 def camoufox_path(download_if_missing: bool = True) -> Path:
     """
     Full path to the active camoufox folder
@@ -787,7 +831,7 @@ def camoufox_path(download_if_missing: bool = True) -> Path:
                 f"{active_display} is not installed. " f"Please run `camoufox fetch` to install."
             )
 
-    elif os.path.exists(INSTALL_DIR) and Version.from_path().is_supported():
+    elif os.path.exists(INSTALL_DIR) and _root_install_supported():
         return INSTALL_DIR
 
     else:
@@ -795,7 +839,24 @@ def camoufox_path(download_if_missing: bool = True) -> Path:
             raise UnsupportedVersion("Camoufox executable is outdated.")
 
     CamoufoxFetcher().install()
-    return camoufox_path()
+
+    # Re-check rather than recurse.
+    #
+    # If the newest published build is still below the floor -- a library
+    # published ahead of its browser release, or a repos.yml source that does
+    # not carry it -- install() is a no-op ("already installed") and recursing
+    # here spun ~1000 fetch attempts into a RecursionError, having hammered the
+    # GitHub API into a rate limit on the way. Say what is actually wrong.
+    active = get_active_path()
+    if active and Version.from_path(active).is_supported():
+        return active
+    if os.path.exists(INSTALL_DIR) and _root_install_supported():
+        return INSTALL_DIR
+    raise UnsupportedVersion(
+        f"No available Camoufox build satisfies this library's minimum "
+        f"({CONSTRAINTS.MIN_VERSION}). The matching browser release may not be "
+        f"published yet; wait for it, or install an older camoufox release."
+    )
 
 
 def get_path(file: str) -> str:

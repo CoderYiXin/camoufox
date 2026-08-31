@@ -31,7 +31,7 @@ def captured_launch_config(monkeypatch):
     monkeypatch.setattr(utils, "launch_path", lambda *_args, **_kwargs: "/camoufox")
     monkeypatch.setattr(utils.LeakWarning, "warn", lambda *_args, **_kwargs: None)
 
-    def capture_env(config, _target_os):
+    def capture_env(config, _target_os, **_kwargs):
         captured.clear()
         captured.update(config)
         return {}

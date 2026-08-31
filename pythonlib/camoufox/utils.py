@@ -49,7 +49,7 @@ CACHE_PREFS = {
 }
 
 
-def _generate_fontconfig(fontconfig_path: str) -> str:
+def _generate_fontconfig(fontconfig_path: str, path: Optional[Path] = None) -> str:
     """
     Generates a runtime fontconfig that resolves bundled font paths absolutely.
     The bundled fonts.conf uses prefix="cwd" relative paths which break when
@@ -61,7 +61,8 @@ def _generate_fontconfig(fontconfig_path: str) -> str:
     """
     import hashlib
 
-    fonts_dir = get_path("fonts")
+    # Beside the caller's own binary when they supplied one; see get_env_vars.
+    fonts_dir = str(path.parent / "fonts") if path else get_path("fonts")
     fonts_conf_src = os.path.join(fontconfig_path, "fonts.conf")
 
     with open(fonts_conf_src, 'r') as f:
@@ -86,10 +87,18 @@ def _generate_fontconfig(fontconfig_path: str) -> str:
 
 
 def get_env_vars(
-    config_map: Dict[str, str], user_agent_os: str
+    config_map: Dict[str, str],
+    user_agent_os: str,
+    path: Optional[Path] = None,
 ) -> Dict[str, Union[str, float, bool]]:
     """
     Gets a dictionary of environment variables for Camoufox.
+
+    `path` is the caller's own executable, when they supplied one. The bundled
+    fontconfig is read from beside that binary rather than from the managed
+    install, the same way _load_properties() already treats properties.json:
+    a caller running their own build should not be resolved against, or made
+    to download, a different one.
     """
     env_vars: Dict[str, Union[str, float, bool]] = {}
     try:
@@ -123,9 +132,14 @@ def get_env_vars(
         os_dir = directory_map.get(user_agent_os, user_agent_os)
 
         # v150+ uses "fontconfig/" (matching the Go launcher); older bundles shipped "fontconfigs/".
-        fontconfig_path = get_path(os.path.join("fontconfig", os_dir))
+        def _bundle_path(*parts: str) -> str:
+            if path:
+                return str(path.parent.joinpath(*parts))
+            return get_path(os.path.join(*parts))
+
+        fontconfig_path = _bundle_path("fontconfig", os_dir)
         if not os.path.exists(os.path.join(fontconfig_path, "fonts.conf")):
-            fontconfig_path = get_path(os.path.join("fontconfigs", os_dir))
+            fontconfig_path = _bundle_path("fontconfigs", os_dir)
 
         # assert that fonts.conf exists in the directory
         if not os.path.exists(os.path.join(fontconfig_path, "fonts.conf")):
@@ -134,7 +148,7 @@ def get_env_vars(
                 f"fonts.conf not found in {fontconfig_path}!  Something ain't right with your camoufox bundle."
             )
 
-        env_vars['FONTCONFIG_FILE'] = _generate_fontconfig(fontconfig_path)
+        env_vars['FONTCONFIG_FILE'] = _generate_fontconfig(fontconfig_path, path=path)
 
     return env_vars
 
@@ -941,7 +955,7 @@ def launch_options(
 
     # Prepare environment variables to pass to Camoufox
     env_vars = {
-        **get_env_vars(config, target_os),
+        **get_env_vars(config, target_os, path=executable_path),
         **env,
     }
     # Prepare the executable path

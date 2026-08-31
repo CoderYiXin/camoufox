@@ -811,7 +811,24 @@ def camoufox_path(download_if_missing: bool = True) -> Path:
             raise UnsupportedVersion("Camoufox executable is outdated.")
 
     CamoufoxFetcher().install()
-    return camoufox_path()
+
+    # Re-check rather than recurse.
+    #
+    # If the newest published build is still below the floor -- a library
+    # published ahead of its browser release, or a repos.yml source that does
+    # not carry it -- install() is a no-op ("already installed") and recursing
+    # here spun ~1000 fetch attempts into a RecursionError, having hammered the
+    # GitHub API into a rate limit on the way. Say what is actually wrong.
+    active = get_active_path()
+    if active and Version.from_path(active).is_supported():
+        return active
+    if os.path.exists(INSTALL_DIR) and _root_install_supported():
+        return INSTALL_DIR
+    raise UnsupportedVersion(
+        f"No available Camoufox build satisfies this library's minimum "
+        f"({CONSTRAINTS.MIN_VERSION}). The matching browser release may not be "
+        f"published yet; wait for it, or install an older camoufox release."
+    )
 
 
 def get_path(file: str) -> str:

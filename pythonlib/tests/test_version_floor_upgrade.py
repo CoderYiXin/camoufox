@@ -95,3 +95,27 @@ def test_root_probe_tolerates_the_versioned_layout(tmp_path, monkeypatch):
     monkeypatch.setattr(pkgman, "INSTALL_DIR", root)
 
     assert pkgman._root_install_supported() is False
+
+
+def test_unsatisfiable_floor_reports_instead_of_recursing(tmp_path, monkeypatch):
+    """A floor no published build satisfies must report, not spin.
+
+    install() is a no-op when the newest release is already installed, so the
+    old `return camoufox_path()` tail recursed ~1000 times -- each iteration
+    firing another GitHub API call, which exhausts the unauthenticated rate
+    limit long before the RecursionError lands. That is the state a library
+    published ahead of its browser release puts every user in.
+    """
+    _install(tmp_path, monkeypatch, "versioned", build="beta.29", floor="beta.30")
+    attempts = []
+
+    class StubFetcher:
+        def install(self):
+            attempts.append(True)  # newest published build is still below the floor
+
+    monkeypatch.setattr(pkgman, "CamoufoxFetcher", StubFetcher)
+
+    with pytest.raises(UnsupportedVersion):
+        pkgman.camoufox_path()
+
+    assert attempts == [True], "should fetch once, not spin"

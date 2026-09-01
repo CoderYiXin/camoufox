@@ -25,9 +25,13 @@ from .fingerprints import from_browserforge, from_preset, generate_fingerprint, 
 from .geolocation import geoip_allowed, get_geolocation
 from .ip import Proxy, public_ip, valid_ipv4, valid_ipv6
 from .locales import handle_locales
+import warnings
+
 from .pkgman import (
     INSTALL_DIR,
     OS_NAME,
+    Version,
+    effective_version_min,
     ensure_browser_profile_dir,
     get_path,
     installed_verstr,
@@ -84,6 +88,57 @@ def _generate_fontconfig(fontconfig_path: str, path: Optional[Path] = None) -> s
             f.write(conf_content)
 
     return runtime_conf
+
+
+def warn_if_executable_predates_playwright(path: Optional[Path]) -> None:
+    """Warn when a caller's own binary is older than their Playwright needs.
+
+    A managed install below the floor is simply upgraded (pkgman resolves it),
+    but `executable_path` deliberately bypasses that -- the caller supplied the
+    binary, so we neither replace it nor download another. That leaves the one
+    pairing nothing checks: an old build driven by Playwright >= 1.61, which
+    sends viewport fields the older Juggler schema rejects.
+
+    This warns rather than raises, because the pairing is not always fatal.
+    Camoufox defaults to no_viewport when it spoofs window dimensions
+    (sync_api), and Playwright then never sends Browser.setDefaultViewport --
+    so the default path works on an old build. It breaks only when a viewport
+    is set explicitly, and then the error is a bare "Protocol error
+    (Browser.setDefaultViewport)" with nothing pointing at the real cause.
+    Refusing to launch would break setups that currently work.
+
+    A build with no version.json beside it -- an unpackaged objdir build, say --
+    tells us nothing, so it is left alone.
+    """
+    if path is None:
+        return
+    try:
+        installed = Version.from_path(Path(path).parent)
+    except (FileNotFoundError, KeyError, ValueError):
+        return
+
+    required = effective_version_min()
+    if installed >= required:
+        return
+
+    warnings.warn(
+        f"The Camoufox build at {path} is {installed.build}, but Playwright "
+        f"{_resolved_playwright_version_str()} needs at least {required.build}. "
+        "Contexts created with an explicit viewport will fail with "
+        '"Protocol error (Browser.setDefaultViewport)". Update the build, or pin '
+        "playwright<1.61.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _resolved_playwright_version_str() -> str:
+    from importlib.metadata import version
+
+    try:
+        return version('playwright')
+    except Exception:
+        return 'the installed version'
 
 
 def get_env_vars(
@@ -951,6 +1006,7 @@ def launch_options(
         pprint(config)
 
     # Validate the config
+    warn_if_executable_predates_playwright(executable_path)
     validate_config(config, path=executable_path)
 
     # Prepare environment variables to pass to Camoufox

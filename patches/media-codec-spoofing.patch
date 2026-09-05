@@ -2,14 +2,14 @@ diff --git a/dom/media/mp4/MP4Decoder.cpp b/dom/media/mp4/MP4Decoder.cpp
 index abcdef0001..abcdef0002 100644
 --- a/dom/media/mp4/MP4Decoder.cpp
 +++ b/dom/media/mp4/MP4Decoder.cpp
-@@ -7,6 +7,7 @@
- #include "MP4Decoder.h"
-
- #include "H264.h"
+@@ -10,6 +10,7 @@
+ #include "MediaContainerType.h"
+ #include "PDMFactory.h"
+ #include "PlatformDecoderModule.h"
 +#include "MaskConfig.hpp"
  #include "VPXDecoder.h"
- #ifdef MOZ_AV1
- #  include "AOMDecoder.h"
+ #include "VideoUtils.h"
+ #include "mozilla/StaticPrefs_media.h"
 @@ -133,6 +134,14 @@ bool MP4Decoder::IsSupportedType(const MediaContainerType& aType,
      return false;
    }

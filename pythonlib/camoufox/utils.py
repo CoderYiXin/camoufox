@@ -452,6 +452,11 @@ def warn_manual_config(config: Dict[str, Any]) -> None:
     # Manual navigator setting
     if is_domain_set(config, 'navigator.'):
         LeakWarning.warn('navigator', False)
+    # Touchscreen digitizer spoofing. Called out separately from the blanket
+    # navigator warning because the knock-on effects reach past navigator into
+    # CSS pointer media queries and the TouchEvent interfaces.
+    if is_domain_set(config, 'navigator.maxTouchPoints'):
+        LeakWarning.warn('max_touch_points', False)
     # Manual screen/window setting
     if is_domain_set(config, 'screen.', 'window.', 'document.body.'):
         LeakWarning.warn('viewport', False)

@@ -9,6 +9,7 @@ const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys
 const {NetworkObserver, PageNetwork} = ChromeUtils.importESModule('chrome://juggler/content/NetworkObserver.js');
 const {PageTarget} = ChromeUtils.importESModule('chrome://juggler/content/TargetRegistry.js');
 const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
+const {MouseDispatch} = ChromeUtils.importESModule('chrome://juggler/content/input/MouseDispatch.js');
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -517,65 +518,36 @@ export class PageHandler {
 
   async ['Page.dispatchMouseEvent']({type, x, y, button, clickCount, modifiers, buttons}) {
     const win = this._pageTarget._window;
+    const eventArgs = {button, clickCount, modifiers, buttons};
     const sendEvents = async (types) => {
       // 1. Scroll element to the desired location first; the coordinates are relative to the element.
       this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x, y, 0, 0);
       // 2. Get element's bounding box in the browser after the scroll is completed.
-      const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
+      //    MouseDispatch owns every conversion from these relative coordinates to
+      //    absolute ones, and every wait for a renderer ack.
+      const dispatch = MouseDispatch.forBrowser(win, this._pageTarget._linkedBrowser, eventArgs);
       // 3. Make sure compositor is flushed after scrolling.
       if (win.windowUtils.flushApzRepaints())
         await helper.awaitTopic('apz-repaints-flushed');
 
       const watcher = new EventWatcher(this._pageEventSink, types, this._pendingEventWatchers);
-      // Dispatch a single synthesized mouse event to the renderer and return a
-      // promise that resolves once the renderer acks it.
-      const sendOne = (eventType, eventX, eventY) => {
-        // This dispatches to the renderer synchronously.
-        const jugglerEventId = win.windowUtils.jugglerSendMouseEvent(
-          eventType,
-          eventX + boundingBox.left,
-          eventY + boundingBox.top,
-          button,
-          clickCount,
-          modifiers,
-          false /* aIgnoreRootScrollFrame */,
-          0.0 /* pressure */,
-          0 /* inputSource */,
-          true /* isDOMEventSynthesized */,
-          false /* isWidgetEventSynthesized */,
-          buttons,
-          win.windowUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
-          false /* disablePointerEvent */
-        );
-        return watcher.ensureEvent(eventType, eventObject => eventObject.jugglerEventId === jugglerEventId);
-      };
-
       const promises = [];
-      for (const type of types) {
+      for (const eventType of types) {
         // Camoufox: when humanize is enabled, expand a direct mousemove into a
         // human-like trajectory of intermediate mousemoves generated in C++
         // (ChromeUtils.camouGetMouseTrajectory / MouseTrajectories.hpp).
-        if (type === 'mousemove' && ChromeUtils.camouGetBool('humanize', false)) {
+        if (eventType === 'mousemove' && ChromeUtils.camouGetBool('humanize', false)) {
           const trajectory = ChromeUtils.camouGetMouseTrajectory(this._lastTrackedPos.x, this._lastTrackedPos.y, x, y);
-          // Dispatch intermediate points sequentially with a short delay. The
-          // first/last pairs are skipped: the last pair is the exact
+          // The first and last pairs are skipped: the last pair is the exact
           // destination, which is dispatched explicitly below.
-          for (let i = 2; i < trajectory.length - 2; i += 2) {
-            const currentX = trajectory[i];
-            const currentY = trajectory[i + 1];
-            // Skip movement that is out of bounds. Must match the endpoint guard
-            // below (>=, not >): a point at exactly x==width or y==height fires as
-            // an exit event instead of eMouseMove, so the hit-renderer ack never
-            // arrives and every later input event hangs behind it forever.
-            if (currentX < 0 || currentY < 0 || currentX >= boundingBox.width || currentY >= boundingBox.height)
-              continue;
-            await sendOne('mousemove', currentX, currentY);
-            await new Promise(resolve => setTimeout(resolve, 10));
-          }
+          const points = [];
+          for (let i = 2; i < trajectory.length - 2; i += 2)
+            points.push([trajectory[i], trajectory[i + 1]]);
+          await dispatch.sendTrajectoryAcked(watcher, 'mousemove', points);
           // Always finish exactly on the requested destination.
-          promises.push(sendOne('mousemove', x, y));
+          promises.push(dispatch.sendAcked(watcher, 'mousemove', x, y));
         } else {
-          promises.push(sendOne(type, x, y));
+          promises.push(dispatch.sendAcked(watcher, eventType, x, y));
         }
       }
       await Promise.all(promises);
@@ -588,32 +560,15 @@ export class PageHandler {
     await this._pageTarget.activateAndRun(async () => {
       this._pageTarget.ensureContextMenuClosed();
       // If someone asks us to dispatch mouse event outside of viewport, then we normally would drop it.
-      const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
-      // Treat exact-edge coordinates as out-of-viewport: a mousemove at x==width or y==height fires as an exit event instead of eMouseMove, so the hit-renderer signal never arrives and every later input event hangs behind it forever.
-      if (x < 0 || y < 0 || x >= boundingBox.width || y >= boundingBox.height) {
+      const dispatch = MouseDispatch.forBrowser(win, this._pageTarget._linkedBrowser, eventArgs);
+      if (!dispatch.isInViewport(x, y)) {
         if (type !== 'mousemove')
           return;
 
         // A special hack: if someone tries to do `mousemove` outside of
         // viewport coordinates, then move the mouse off from the Web Content.
         // This way we can eliminate all the hover effects.
-        // NOTE: since this won't go inside the renderer, there's no need to wait for ACK.
-        win.windowUtils.jugglerSendMouseEvent(
-          'mousemove',
-          0 /* x */,
-          0 /* y */,
-          button,
-          clickCount,
-          modifiers,
-          false /* aIgnoreRootScrollFrame */,
-          0.0 /* pressure */,
-          0 /* inputSource */,
-          true /* isDOMEventSynthesized */,
-          false /* isWidgetEventSynthesized */,
-          buttons,
-          win.windowUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
-          false /* disablePointerEvent */
-        );
+        dispatch.parkOffContent();
         return;
       }
 
@@ -700,24 +655,22 @@ export class PageHandler {
       // 1. Scroll element to the desired location first; the coordinates are relative to the element.
       this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x, y, 0, 0);
       // 2. Get element's bounding box in the browser after the scroll is completed.
-      const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
-
       const win = this._pageTarget._window;
+      const dispatch = MouseDispatch.forBrowser(win, this._pageTarget._linkedBrowser, {modifiers});
       // 3. Make sure compositor is flushed after scrolling.
       if (win.windowUtils.flushApzRepaints())
         await helper.awaitTopic('apz-repaints-flushed');
 
-      win.windowUtils.sendWheelEvent(
-        x + boundingBox.left,
-        y + boundingBox.top,
+      // Same conversion as a mouse event: a wheel at relative y == 0 would
+      // otherwise land on the chrome/content boundary and scroll the tab strip.
+      dispatch.sendWheel(x, y, {
         deltaX,
         deltaY,
         deltaZ,
         deltaMode,
-        modifiers,
         lineOrPageDeltaX,
         lineOrPageDeltaY,
-        0 /* options */);
+      });
     }, { muteNotificationsPopup: true });
   }
 

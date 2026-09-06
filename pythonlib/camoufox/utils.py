@@ -330,7 +330,7 @@ def get_screen_cons(headless: Optional[bool] = None) -> Optional[Screen]:
     Bounds are CSS pixels, the unit Firefox lays its windows out in -- see
     camoufox.display for why that differs from the monitor's physical size.
     """
-    if headless is False:
+    if headless is True:
         return None  # Skip if headless
     display = largest_display()
     if display is None:
@@ -452,6 +452,11 @@ def warn_manual_config(config: Dict[str, Any]) -> None:
     # Manual navigator setting
     if is_domain_set(config, 'navigator.'):
         LeakWarning.warn('navigator', False)
+    # Touchscreen digitizer spoofing. Called out separately from the blanket
+    # navigator warning because the knock-on effects reach past navigator into
+    # CSS pointer media queries and the TouchEvent interfaces.
+    if is_domain_set(config, 'navigator.maxTouchPoints'):
+        LeakWarning.warn('max_touch_points', False)
     # Manual screen/window setting
     if is_domain_set(config, 'screen.', 'window.', 'document.body.'):
         LeakWarning.warn('viewport', False)
@@ -786,7 +791,10 @@ def launch_options(
 
     # Bound the geometry to the real display. BrowserForge only honours this when
     # its pool has a match, so it is re-applied after generation as well.
-    screen_cons = screen or get_screen_cons(headless or has_display(env))
+    # `headless` and "is there a display to probe" are separate questions: passing
+    # `headless or has_display(env)` made a headful run on a real display look like a
+    # headless one to get_screen_cons(), which then skipped the bound entirely.
+    screen_cons = screen or (get_screen_cons(headless) if has_display(env) else None)
 
     if not _used_preset and fingerprint is None:
         # Default: BrowserForge synthetic generation (infinite unique fingerprints)

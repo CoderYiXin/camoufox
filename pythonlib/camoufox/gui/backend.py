@@ -32,7 +32,7 @@ from ..multiversion import (
     save_repo_cache,
     set_active,
 )
-from ..pkgman import RepoConfig, unzip, webdl
+from ..pkgman import RepoConfig, unzip, verify_sha256, webdl
 
 # Workers
 
@@ -48,10 +48,12 @@ class Worker(QThread):
 
 
 class DownloadWorker(Worker):
-    def __init__(self, repo_config, version):
+    def __init__(self, repo_config, version, activate_after_install=False):
         super().__init__()
         self.repo_config = repo_config
         self.version = version
+        self.activate_after_install = activate_after_install
+        self.relative_path = None
 
     def run(self):
         try:
@@ -72,8 +74,12 @@ class DownloadWorker(Worker):
 
             with tempfile.NamedTemporaryFile() as f:
                 webdl(self.version.url, buffer=f, bar=False, progress_callback=self._progress)
-                self.status.emit("Extracting...")
+                self.status.emit("Verifying...")
                 self.progress.emit(-1)
+                verify_sha256(
+                    f, self.version.sha256, desc=f"Camoufox v{self.version.version.full_string}"
+                )
+                self.status.emit("Extracting...")
                 unzip(f, str(path), bar=False)
 
             (path / 'version.json').write_bytes(orjson.dumps(self.version.to_metadata()))
@@ -81,7 +87,7 @@ class DownloadWorker(Worker):
             if sys.platform != 'win32':
                 os.system(f'chmod -R 755 {shlex.quote(str(path))}')
 
-            set_active(f"browsers/{repo_name}/{folder}")
+            self.relative_path = f"browsers/{repo_name}/{folder}"
             self.done.emit(True, f"Installed v{self.version.version.full_string}")
         except Exception as e:
             msg = str(e)
@@ -310,6 +316,7 @@ class Backend(QObject):
     debugChanged = Signal()
     currentRepoChanged = Signal()
     channelPrompt = Signal(int, str, str)
+    installedPrompt = Signal(int, str, str, bool, str)
 
     def __init__(self):
         super().__init__()
@@ -651,6 +658,45 @@ class Backend(QObject):
         self.infoChanged.emit()
 
     @Slot(int)
+    def unpinVersion(self, index):
+        item = self._version_model.get(index)
+        if not item or not item.is_pinned:
+            return
+
+        cfg = load_config()
+        cfg.pop('pinned', None)
+        cfg.pop('pinned_sha', None)
+        save_config(cfg)
+
+        self._refresh()
+        self.infoChanged.emit()
+
+    @Slot(int)
+    def followVersionChannel(self, index):
+        item = self._version_model.get(index)
+        if not item or not item.version_data or not item.installed_data:
+            return
+
+        ctype = "prerelease" if item.is_prerelease else "stable"
+        repo_name = self._current_repo.name
+        cfg = load_config()
+        cfg['channel'] = repo_name if ctype == "stable" else f"{repo_name}/{ctype}"
+        cfg.pop('pinned', None)
+        cfg.pop('pinned_sha', None)
+        cfg.update(
+            {
+                'active_repo': repo_name,
+                'active_build': item.version_data.version.build,
+                'active_version': item.version_data.version.version,
+            }
+        )
+        save_config(cfg)
+        set_active(item.installed_data.relative_path)
+
+        self._refresh()
+        self.infoChanged.emit()
+
+    @Slot(int)
     def setFollowedChannel(self, index):
         _, keys, _ = self._build_channels()
         if not (0 <= index < len(keys)):
@@ -702,31 +748,50 @@ class Backend(QObject):
                 break
 
         self._refresh()
-        self.infoChanged.emit()
 
         for idx, item in enumerate(self._version_model._items):
             if item.is_header:
                 continue
             if item.is_prerelease == is_pre:
-                self._selected = idx
-                self.selectionChanged.emit()
                 if item.installed_data:
                     set_active(item.installed_data.relative_path)
+                    self._refresh()
+                self._selected = idx
+                self.selectionChanged.emit()
                 break
+
+        self.infoChanged.emit()
 
     @Slot()
     def installSelected(self):
         item = self._version_model.get(self._selected)
         if item and not item.is_header and not item.is_installed:
-            self._run_worker(DownloadWorker(self._current_repo, item.version_data), self._on_done)
+            worker = DownloadWorker(
+                self._current_repo,
+                item.version_data,
+                activate_after_install=item.is_active,
+            )
+            self._run_worker(worker, self._on_done)
 
     @Slot()
     def uninstallSelected(self):
         item = self._version_model.get(self._selected)
         if not item or not item.is_installed or not item.installed_data:
             return
+        installed = item.installed_data
+        was_active = item.is_active
         try:
-            remove_version(item.installed_data.path)
+            remove_version(installed.path)
+            if was_active:
+                cfg = load_config()
+                cfg.update(
+                    {
+                        'active_repo': self._current_repo.name,
+                        'active_build': installed.version.build,
+                        'active_version': installed.version.version,
+                    }
+                )
+                save_config(cfg)
             self._set_status(f"Uninstalled {item.display}", "#2ecc71")
             self._refresh()
             self.infoChanged.emit()
@@ -965,6 +1030,20 @@ class Backend(QObject):
             return v.sha256 == latest_sha.get(v.version.full_string)
 
         repo_key = get_repo_name(self._current_repo.repo)
+        channel = cfg.get('channel') or get_default_channel()
+        _, active_channel = (channel.split('/', 1) + ['stable'])[:2]
+
+        def _is_active(v, inst):
+            if inst and inst.is_active:
+                return True
+            return (
+                str(cfg.get('active_repo') or '').lower() == repo_key
+                and cfg.get('active_build') == v.version.build
+                and cfg.get('active_version') == v.version.version
+                and v.is_prerelease == (active_channel == 'prerelease')
+                and v.sha256 == latest_sha.get(v.version.full_string)
+            )
+
         installed_list = [iv for iv in list_installed() if iv.repo_name == repo_key]
         row_inst, extras = classify_installs(versions, installed_list)
         inst_by_id = {id(v): inst for v, inst in zip(versions, row_inst)}
@@ -995,7 +1074,7 @@ class Backend(QObject):
                             f"v{v.version.version}",
                             v.version.build,
                             is_prerelease=is_prerelease,
-                            is_active=bool(inst and inst.is_active),
+                            is_active=_is_active(v, inst),
                             is_pinned=_is_pinned(v),
                             is_installed=bool(inst),
                             version_data=v,
@@ -1063,13 +1142,66 @@ class Backend(QObject):
         worker.start()
 
     def _on_done(self, ok, msg):
+        worker = self._worker
         self._busy = False
         self._progress = -1
         self.busyChanged.emit()
         self._set_status(msg if ok else f"Error: {msg}", "#2ecc71" if ok else "#e74c3c")
         if ok:
+            if (
+                isinstance(worker, DownloadWorker)
+                and worker.activate_after_install
+                and worker.relative_path
+            ):
+                set_active(worker.relative_path)
+
             self._channel_data = None
             self._refresh()
+
+            if isinstance(worker, DownloadWorker):
+                target_idx = -1
+                for idx, item in enumerate(self._version_model._items):
+                    version = item.version_data
+                    if not version:
+                        continue
+                    if (
+                        version.version.full_string == worker.version.version.full_string
+                        and version.sha256 == worker.version.sha256
+                    ):
+                        target_idx = idx
+                        break
+
+                if target_idx >= 0:
+                    self._selected = target_idx
+                    self.selectionChanged.emit()
+
+                    if not worker.activate_after_install:
+                        versions = get_cached_versions(worker.repo_config.name)
+                        latest = next(
+                            (
+                                version
+                                for version in versions
+                                if version.is_prerelease == worker.version.is_prerelease
+                            ),
+                            None,
+                        )
+                        is_latest = bool(
+                            latest
+                            and latest.version.full_string == worker.version.version.full_string
+                            and latest.sha256 == worker.version.sha256
+                        )
+                        channel = worker.repo_config.name
+                        if worker.version.is_prerelease:
+                            channel += " (Prerelease)"
+                        item = self._version_model.get(target_idx)
+                        self.installedPrompt.emit(
+                            target_idx,
+                            item.display,
+                            item.build,
+                            is_latest,
+                            channel,
+                        )
+
             self.infoChanged.emit()
             self._load_spoof_from_cache()
             self.debugChanged.emit()

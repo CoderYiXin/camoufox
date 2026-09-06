@@ -1440,7 +1440,14 @@ diff --git a/dom/html/HTMLInputElement.cpp b/dom/html/HTMLInputElement.cpp
 index e3698a2cbc..dce23cb29d 100644
 --- a/dom/html/HTMLInputElement.cpp
 +++ b/dom/html/HTMLInputElement.cpp
-@@ -46,6 +46,7 @@
+@@ -39,20 +39,21 @@
+ #include "mozilla/dom/Document.h"
+ #include "mozilla/dom/DocumentInlines.h"
+ #include "mozilla/dom/DocumentOrShadowRoot.h"
+ #include "mozilla/dom/ElementBinding.h"
+ #include "mozilla/dom/FileSystemUtils.h"
+ #include "mozilla/dom/FormData.h"
+ #include "mozilla/dom/GetFilesHelper.h"
  #include "mozilla/dom/HTMLDataListElement.h"
  #include "mozilla/dom/HTMLOptionElement.h"
  #include "mozilla/dom/InputType.h"
@@ -1448,7 +1455,21 @@ index e3698a2cbc..dce23cb29d 100644
  #include "mozilla/dom/MouseEvent.h"
  #include "mozilla/dom/NumericInputTypes.h"
  #include "mozilla/dom/ProgressEvent.h"
-@@ -870,6 +871,13 @@ nsresult HTMLInputElement::InitColorPicker() {
+ #include "mozilla/dom/UnionTypes.h"
+ #include "mozilla/dom/UserActivation.h"
+ #include "mozilla/dom/WheelEventBinding.h"
+ #include "mozilla/dom/WindowContext.h"
+ #include "mozilla/dom/WindowGlobalChild.h"
+ #include "mozilla/glean/DomMetrics.h"
+ #include "nsAttrValueInlines.h"
+@@ -922,20 +923,27 @@
+   }
+ 
+   // Get parent nsPIDOMWindow object.
+   nsCOMPtr<Document> doc = OwnerDoc();
+ 
+   RefPtr<BrowsingContext> bc = doc->GetBrowsingContext();
+   if (!bc) {
      return NS_ERROR_FAILURE;
    }
  
@@ -1462,6 +1483,14 @@ index e3698a2cbc..dce23cb29d 100644
    if (IsPickerBlocked(doc)) {
      return NS_OK;
    }
+ 
+   // Get Loc title
+   nsAutoString title;
+   nsAutoString okButtonLabel;
+   if (aType == FILE_PICKER_DIRECTORY) {
+     nsContentUtils::GetMaybeLocalizedString(PropertiesFile::FORMS_PROPERTIES,
+                                             "DirectoryUpload", doc, title);
+
 diff --git a/dom/interfaces/base/nsIDOMWindowUtils.idl b/dom/interfaces/base/nsIDOMWindowUtils.idl
 index 5c0c24dc52..44284cc319 100644
 --- a/dom/interfaces/base/nsIDOMWindowUtils.idl
@@ -1497,7 +1526,28 @@ diff --git a/dom/ipc/BrowserChild.cpp b/dom/ipc/BrowserChild.cpp
 index c6d774103c..9389fb3742 100644
 --- a/dom/ipc/BrowserChild.cpp
 +++ b/dom/ipc/BrowserChild.cpp
-@@ -1840,6 +1840,21 @@ void BrowserChild::HandleRealMouseButtonEvent(
+@@ -1609,9 +1609,19 @@ mozilla::ipc::IPCResult BrowserChild::RecvNormalPriorityRealMouseMoveEvent(
+ mozilla::ipc::IPCResult BrowserChild::RecvRealMouseMoveEvent(
+     const WidgetMouseEvent& aMouseEvent, const ScrollableLayerGuid& aGuid,
+     const uint64_t& aInputBlockId) {
+   MOZ_ASSERT(!aMouseEvent.AsPointerEvent());
+   MOZ_ASSERT(!aMouseEvent.AsDragEvent());
+-  if (mCoalesceMouseMoveEvents && mCoalescedMouseEventFlusher) {
++  // Playwright/juggler: synthesized mouse events (mJugglerEventId != 0) await a
++  // per-event "juggler-mouse-event-hit-renderer" observer notification that is
++  // only fired from HandleRealMouseButtonEvent. Coalescing defers dispatch to
++  // the next nsRefreshDriver tick, which under heavy parallel load (many
++  // browsers, software rendering) can be many seconds late — long enough to
++  // pin activateAndRun's serialization chain. Skip the coalescing branch for
++  // juggler-originated events so they dispatch immediately and ack in
++  // milliseconds; real (non-juggler) events still benefit from the coalescing
++  // optimization.
++  if (mCoalesceMouseMoveEvents && mCoalescedMouseEventFlusher &&
++      !aMouseEvent.mJugglerEventId) {
+     CoalescedMouseData* data =
+         mCoalescedMouseData.GetOrInsertNew(aMouseEvent.pointerId);
+     MOZ_ASSERT(data);
+@@ -1840,6 +1850,21 @@ void BrowserChild::HandleRealMouseButtonEvent(
    if (postLayerization) {
      postLayerization->Register();
    }

@@ -14,7 +14,12 @@ from typing_extensions import Literal
 from camoufox.virtdisplay import VirtualDisplay
 
 from .fingerprints import generate_context_fingerprint
-from .utils import launch_options, sync_attach_vd
+from .utils import (
+    attach_no_viewport_default,
+    launch_options,
+    spoofs_window_dimensions,
+    sync_attach_vd,
+)
 
 
 class Camoufox(PlaywrightContextManager):
@@ -104,13 +109,21 @@ def NewBrowser(
     if not from_options:
         from_options = launch_options(headless=headless, debug=debug, **kwargs)
 
+    # Playwright's default viewport deadlocks Juggler when the window is spoofed
+    # to a different size (daijro/camoufox#666), so default to no_viewport.
+    no_viewport_default = spoofs_window_dimensions(from_options)
+
     # Persistent context
     if persistent_context:
+        if no_viewport_default and not ('viewport' in from_options or 'no_viewport' in from_options):
+            from_options = {**from_options, 'no_viewport': True}
         context = playwright.firefox.launch_persistent_context(**from_options)
         return sync_attach_vd(context, virtual_display)
 
     # Browser
     browser = playwright.firefox.launch(**from_options)
+    if no_viewport_default:
+        attach_no_viewport_default(browser)
     return sync_attach_vd(browser, virtual_display)
 
 

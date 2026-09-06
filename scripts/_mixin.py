@@ -55,6 +55,8 @@ def find_src_dir(root_dir='.', version=None, release=None):
 
 def get_moz_target(target, arch):
     """Get moz_target from target and arch"""
+    if arch == "i686" and target != "windows":
+        raise ValueError(f"Unsupported architecture for {target}: {arch}")
     if target == "linux":
         return "aarch64-unknown-linux-gnu" if arch == "arm64" else f"{arch}-pc-linux-gnu"
     if target == "windows":

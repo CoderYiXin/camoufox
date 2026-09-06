@@ -1,160 +1,139 @@
 diff --git a/dom/base/ScreenDimensionManager.cpp b/dom/base/ScreenDimensionManager.cpp
 new file mode 100644
-index 0000000000..f5d2c23df5
+index 0000000000..bcfdb0a863
 --- /dev/null
 +++ b/dom/base/ScreenDimensionManager.cpp
-@@ -0,0 +1,104 @@
-+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
-+/* This Source Code Form is subject to the terms of the Mozilla Public
-+ * License, v. 2.0. If a copy of the MPL was not distributed with this
-+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-+
+@@ -0,0 +1,45 @@
++/* Camoufox: Per-context screen dimension manager */
 +#include "ScreenDimensionManager.h"
-+#include "RoverfoxStorageManager.h"
++
++#include "mozilla/dom/BrowsingContext.h"
 +#include "nsGlobalWindowInner.h"
 +#include "xpcpublic.h"
-+#include "mozilla/dom/BrowsingContext.h"
-+#include "mozilla/dom/Document.h"
-+#include "nsDocShell.h"
 +
 +namespace mozilla {
 +namespace dom {
 +
-+/* static */ uint32_t
-+ScreenDimensionManager::GetUserContextIdFromWindow(nsGlobalWindowInner* aWindow) {
-+  if (!aWindow) {
-+    return 0;
-+  }
-+  uint32_t userContextId = 0;
-+  if (BrowsingContext* bc = aWindow->GetBrowsingContext()) {
-+    userContextId = bc->OriginAttributesRef().mUserContextId;
-+  }
-+  return userContextId;
-+}
-+
-+/* static */ void
-+ScreenDimensionManager::SetDimensions(uint32_t aUserContextId, int32_t aWidth, int32_t aHeight) {
-+  nsString widthKey, heightKey;
-+  widthKey.AppendPrintf("screenWidth_%u", aUserContextId);
-+  heightKey.AppendPrintf("screenHeight_%u", aUserContextId);
-+  RoverfoxStorageManager::PutUint(widthKey, static_cast<uint32_t>(aWidth));
-+  RoverfoxStorageManager::PutUint(heightKey, static_cast<uint32_t>(aHeight));
-+}
-+
-+/* static */ bool
-+ScreenDimensionManager::GetDimensions(uint32_t aUserContextId, int32_t* aWidth, int32_t* aHeight) {
-+  nsString widthKey, heightKey;
-+  widthKey.AppendPrintf("screenWidth_%u", aUserContextId);
-+  heightKey.AppendPrintf("screenHeight_%u", aUserContextId);
-+
-+  uint32_t width = 0, height = 0;
-+  RoverfoxStorageManager::GetUint(widthKey, width);
-+  RoverfoxStorageManager::GetUint(heightKey, height);
-+
-+  if (width > 0 && height > 0) {
-+    *aWidth = static_cast<int32_t>(width);
-+    *aHeight = static_cast<int32_t>(height);
-+    return true;
-+  }
-+  return false;
-+}
-+
-+/* static */ void
-+ScreenDimensionManager::SetColorDepth(uint32_t aUserContextId, int32_t aColorDepth) {
-+  nsString key;
-+  key.AppendPrintf("screenColorDepth_%u", aUserContextId);
-+  RoverfoxStorageManager::PutUint(key, static_cast<uint32_t>(aColorDepth));
-+}
-+
-+/* static */ int32_t
-+ScreenDimensionManager::GetColorDepth(uint32_t aUserContextId) {
-+  nsString key;
-+  key.AppendPrintf("screenColorDepth_%u", aUserContextId);
-+  uint32_t depth = 0;
-+  RoverfoxStorageManager::GetUint(key, depth);
-+  return static_cast<int32_t>(depth);
-+}
-+
-+/* static */ nsString
-+ScreenDimensionManager::DisabledKeyForUserContext(uint32_t userContextId) {
-+  nsString key;
-+  key.AppendPrintf("screen_disabled_%u", userContextId);
-+  return key;
-+}
-+
-+/* static */ void
-+ScreenDimensionManager::DisableFunction(uint32_t userContextId) {
-+  nsString key = DisabledKeyForUserContext(userContextId);
-+  RoverfoxStorageManager::PutBool(key, true);
-+}
-+
-+/* static */ bool
-+ScreenDimensionManager::IsFunctionEnabledForWebIDL(JSContext* aCx, JSObject* aObj) {
++static uint32_t UserContextIdFor(JSObject* aObj) {
 +  nsGlobalWindowInner* win = xpc::WindowOrNull(aObj);
-+  if (!win) {
-+    return false;
-+  }
-+
-+  uint32_t userContextId = 0;
++  if (!win) return 0;
 +  if (BrowsingContext* bc = win->GetBrowsingContext()) {
-+    userContextId = bc->OriginAttributesRef().mUserContextId;
++    return bc->OriginAttributesRef().mUserContextId;
 +  }
++  return 0;
++}
 +
++static bool IsDisabled(const char* aPrefix, uint32_t aId) {
++  nsAutoString dKey;
++  dKey.AppendPrintf("%s_d_%u", aPrefix, aId);
 +  bool disabled = false;
-+  RoverfoxStorageManager::GetBool(DisabledKeyForUserContext(userContextId), disabled);
-+  return !disabled;
++  RoverfoxStorageManager::GetBool(dKey, disabled);
++  return disabled;
++}
++
++/* static */
++bool ScreenDimensionManager::IsDimensionsFunctionEnabledForWebIDL(
++    JSContext* aCx, JSObject* aObj) {
++  nsGlobalWindowInner* win = xpc::WindowOrNull(aObj);
++  if (!win) return false;
++  return !IsDisabled("scr_dim", UserContextIdFor(aObj));
++}
++
++/* static */
++bool ScreenDimensionManager::IsColorDepthFunctionEnabledForWebIDL(
++    JSContext* aCx, JSObject* aObj) {
++  nsGlobalWindowInner* win = xpc::WindowOrNull(aObj);
++  if (!win) return false;
++  return !IsDisabled("scr_depth", UserContextIdFor(aObj));
 +}
 +
 +}  // namespace dom
 +}  // namespace mozilla
 diff --git a/dom/base/ScreenDimensionManager.h b/dom/base/ScreenDimensionManager.h
 new file mode 100644
-index 0000000000..329f709a60
+index 0000000000..6861cdcfbc
 --- /dev/null
 +++ b/dom/base/ScreenDimensionManager.h
-@@ -0,0 +1,47 @@
-+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
-+/* This Source Code Form is subject to the terms of the Mozilla Public
-+ * License, v. 2.0. If a copy of the MPL was not distributed with this
-+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-+
+@@ -0,0 +1,85 @@
++/* Camoufox: Per-context screen dimension manager */
 +#ifndef mozilla_dom_ScreenDimensionManager_h
 +#define mozilla_dom_ScreenDimensionManager_h
 +
++#include "RoverfoxStorageManager.h"
 +#include "nsString.h"
-+
-+// Forward declarations for WebIDL binding (avoid js/TypeDecls.h namespace pollution)
-+struct JSContext;
-+class JSObject;
-+
-+class nsGlobalWindowInner;
 +
 +namespace mozilla {
 +namespace dom {
 +
++// Per-context screen geometry, keyed by userContextId, stored through
++// RoverfoxStorageManager so the value survives the content-process boundary the
++// same way NavigatorManager's does.
++//
++// Width and height are stored as one pair and gated by one "disabled" flag:
++// setScreenDimensions() takes both at once, so there is no state in which only
++// one of them has been set. colorDepth is independent -- setScreenColorDepth()
++// is a separate call and self-destructs separately.
 +class ScreenDimensionManager {
 + public:
-+  // Get userContextId from window for storage key
-+  static uint32_t GetUserContextIdFromWindow(nsGlobalWindowInner* aWindow);
++  static void SetDimensions(uint32_t aId, uint32_t aWidth, uint32_t aHeight) {
++    nsAutoString wKey;
++    wKey.AppendPrintf("scr_w_%u", aId);
++    RoverfoxStorageManager::PutUint(wKey, aWidth);
++    nsAutoString hKey;
++    hKey.AppendPrintf("scr_h_%u", aId);
++    RoverfoxStorageManager::PutUint(hKey, aHeight);
++    nsAutoString dKey;
++    dKey.AppendPrintf("scr_dim_d_%u", aId);
++    RoverfoxStorageManager::PutBool(dKey, true);
++  }
 +
-+  // Set/get screen dimensions for a user context
-+  static void SetDimensions(uint32_t aUserContextId, int32_t aWidth, int32_t aHeight);
-+  static bool GetDimensions(uint32_t aUserContextId, int32_t* aWidth, int32_t* aHeight);
++  static bool GetDimensions(uint32_t aId, uint32_t& aWidth, uint32_t& aHeight) {
++    nsAutoString wKey;
++    wKey.AppendPrintf("scr_w_%u", aId);
++    nsAutoString hKey;
++    hKey.AppendPrintf("scr_h_%u", aId);
++    // Both or neither: a half-applied size is a worse lie than no lie at all,
++    // since screen.width and screen.height would come from different displays.
++    uint32_t width = 0;
++    uint32_t height = 0;
++    if (!RoverfoxStorageManager::GetUint(wKey, width) ||
++        !RoverfoxStorageManager::GetUint(hKey, height)) {
++      return false;
++    }
++    if (!width || !height) {
++      return false;
++    }
++    aWidth = width;
++    aHeight = height;
++    return true;
++  }
 +
-+  // Set/get color depth for a user context
-+  static void SetColorDepth(uint32_t aUserContextId, int32_t aColorDepth);
-+  static int32_t GetColorDepth(uint32_t aUserContextId);
++  static void SetColorDepth(uint32_t aId, uint32_t aDepth) {
++    nsAutoString key;
++    key.AppendPrintf("scr_depth_%u", aId);
++    RoverfoxStorageManager::PutUint(key, aDepth);
++    nsAutoString dKey;
++    dKey.AppendPrintf("scr_depth_d_%u", aId);
++    RoverfoxStorageManager::PutBool(dKey, true);
++  }
 +
-+  // Self-destruct support
-+  static void DisableFunction(uint32_t userContextId);
++  static bool GetColorDepth(uint32_t aId, uint32_t& aDepth) {
++    nsAutoString key;
++    key.AppendPrintf("scr_depth_%u", aId);
++    uint32_t depth = 0;
++    if (!RoverfoxStorageManager::GetUint(key, depth) || !depth) {
++      return false;
++    }
++    aDepth = depth;
++    return true;
++  }
 +
-+  // WebIDL exposure check
-+  static bool IsFunctionEnabledForWebIDL(JSContext* aCx, JSObject* aObj);
-+
-+ private:
-+  static nsString DisabledKeyForUserContext(uint32_t userContextId);
++  // WebIDL Func= gates. Each returns false once the matching setter has run,
++  // which is what removes the function from the page's view of window.
++  static bool IsDimensionsFunctionEnabledForWebIDL(JSContext* aCx,
++                                                   JSObject* aObj);
++  static bool IsColorDepthFunctionEnabledForWebIDL(JSContext* aCx,
++                                                   JSObject* aObj);
 +};
 +
 +}  // namespace dom
@@ -162,7 +141,7 @@ index 0000000000..329f709a60
 +
 +#endif  // mozilla_dom_ScreenDimensionManager_h
 diff --git a/dom/base/moz.build b/dom/base/moz.build
-index 8e94c6bd70..8787fc79f5 100644
+index 8e94c6bd70..7607e2429e 100644
 --- a/dom/base/moz.build
 +++ b/dom/base/moz.build
 @@ -262,6 +262,7 @@ EXPORTS.mozilla.dom += [
@@ -173,42 +152,46 @@ index 8e94c6bd70..8787fc79f5 100644
      "ScreenLuminance.h",
      "ScreenOrientation.h",
      "Selection.h",
-@@ -473,6 +474,7 @@ UNIFIED_SOURCES += [
-     "ResponsiveImageSelector.cpp",
-     "RoverfoxStorageManager.cpp",
-     "SameProcessMessageQueue.cpp",
-+    "ScreenDimensionManager.cpp",
-     "ScreenLuminance.cpp",
-     "ScreenOrientation.cpp",
-     "ScriptableContentIterator.cpp",
+@@ -551,6 +552,9 @@ SOURCES += [
+ # (includes RoverfoxStorageManager.h which can affect compilation units)
+ SOURCES += ["NavigatorManager.cpp"]
+ 
++# ScreenDimensionManager compiled separately for the same reason.
++SOURCES += ["ScreenDimensionManager.cpp"]
++
+ # FontListManager compiled separately (includes RoverfoxStorageManager.h)
+ SOURCES += ["FontListManager.cpp"]
+ 
 diff --git a/dom/base/nsGlobalWindowInner.cpp b/dom/base/nsGlobalWindowInner.cpp
-index 5c3d639da9..bab87396cc 100644
+index 5c3d639da9..8620f732ec 100644
 --- a/dom/base/nsGlobalWindowInner.cpp
 +++ b/dom/base/nsGlobalWindowInner.cpp
-@@ -286,6 +286,7 @@
- #include "nsISlowScriptDebug.h"
- #include "nsISupportsPrimitives.h"
- #include "nsISupportsUtils.h"
+@@ -5,6 +5,7 @@
+ #include "nsGlobalWindowInner.h"
+ #include "MaskConfig.hpp"
+ #include "NavigatorManager.h"
 +#include "ScreenDimensionManager.h"
- #include "nsIThread.h"
- #include "nsITimedChannel.h"
- #include "nsIURI.h"
-@@ -7727,6 +7728,52 @@ nsISerialEventTarget* nsGlobalWindowInner::SerialEventTarget() const {
-   return GetMainThreadSerialEventTarget();
+ 
+ #include <inttypes.h>
+ #include <stdio.h>
+@@ -7921,6 +7922,56 @@ void nsGlobalWindowInner::SetNavigatorUserAgent(const nsAString& ua,
+   }
  }
  
-+void nsGlobalWindowInner::SetScreenDimensions(int32_t aWidth, int32_t aHeight,
++void nsGlobalWindowInner::SetScreenDimensions(uint32_t width, uint32_t height,
 +                                              ErrorResult& aRv) {
-+  uint32_t userContextId = ScreenDimensionManager::GetUserContextIdFromWindow(this);
-+
-+  if (aWidth <= 0 || aHeight <= 0) {
-+    aRv.ThrowTypeError("Screen dimensions must be positive integers");
++  if (!width || !height) {
++    aRv.ThrowTypeError("Screen dimensions must be non-zero");
 +    return;
 +  }
-+
-+  ScreenDimensionManager::SetDimensions(userContextId, aWidth, aHeight);
-+  ScreenDimensionManager::DisableFunction(userContextId);
-+
++  uint32_t userContextId = 0;
++  if (BrowsingContext* bc = GetBrowsingContext()) {
++    userContextId = bc->OriginAttributesRef().mUserContextId;
++  }
++  ScreenDimensionManager::SetDimensions(userContextId, width, height);
++  if (userContextId != 0) {
++    ScreenDimensionManager::SetDimensions(0, width, height);
++  }
 +  // Self-destruct: set to undefined first to bust IC/shape caches on ARM64.
 +  if (JSContext* cx = nsContentUtils::GetCurrentJSContext()) {
 +    JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
@@ -220,18 +203,20 @@ index 5c3d639da9..bab87396cc 100644
 +  }
 +}
 +
-+void nsGlobalWindowInner::SetScreenColorDepth(int32_t aColorDepth,
++void nsGlobalWindowInner::SetScreenColorDepth(uint32_t depth,
 +                                              ErrorResult& aRv) {
-+  uint32_t userContextId = ScreenDimensionManager::GetUserContextIdFromWindow(this);
-+
-+  if (aColorDepth <= 0) {
-+    aRv.ThrowTypeError("Color depth must be a positive integer");
++  if (!depth) {
++    aRv.ThrowTypeError("Screen colour depth must be non-zero");
 +    return;
 +  }
-+
-+  ScreenDimensionManager::SetColorDepth(userContextId, aColorDepth);
-+  ScreenDimensionManager::DisableFunction(userContextId);
-+
++  uint32_t userContextId = 0;
++  if (BrowsingContext* bc = GetBrowsingContext()) {
++    userContextId = bc->OriginAttributesRef().mUserContextId;
++  }
++  ScreenDimensionManager::SetColorDepth(userContextId, depth);
++  if (userContextId != 0) {
++    ScreenDimensionManager::SetColorDepth(0, depth);
++  }
 +  // Self-destruct: set to undefined first to bust IC/shape caches on ARM64.
 +  if (JSContext* cx = nsContentUtils::GetCurrentJSContext()) {
 +    JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
@@ -243,112 +228,130 @@ index 5c3d639da9..bab87396cc 100644
 +  }
 +}
 +
- Worklet* nsGlobalWindowInner::GetPaintWorklet(ErrorResult& aRv) {
-   if (!mPaintWorklet) {
-     nsIPrincipal* principal = GetPrincipal();
+ RefPtr<GenericPromise> nsGlobalWindowInner::StorageAccessPermissionChanged(
+     bool aGranted) {
+   // Invalidate cached StorageAllowed field so that calls to GetLocalStorage
 diff --git a/dom/base/nsGlobalWindowInner.h b/dom/base/nsGlobalWindowInner.h
-index 54b50f7bb1..4f807813d1 100644
+index 54b50f7bb1..e907a2c31a 100644
 --- a/dom/base/nsGlobalWindowInner.h
 +++ b/dom/base/nsGlobalWindowInner.h
-@@ -679,6 +679,10 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
-   // Audio fingerprint seed for per-context audio fingerprinting
-   void SetAudioFingerprintSeed(uint32_t seed, mozilla::ErrorResult& aRv);
+@@ -701,6 +701,11 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
+                                        mozilla::ErrorResult& aRv);
+   void SetNavigatorUserAgent(const nsAString& ua, mozilla::ErrorResult& aRv);
  
-+  // Screen dimension methods for per-context screen spoofing
-+  void SetScreenDimensions(int32_t aWidth, int32_t aHeight, mozilla::ErrorResult& aRv);
-+  void SetScreenColorDepth(int32_t aColorDepth, mozilla::ErrorResult& aRv);
++  // Per-context screen geometry
++  void SetScreenDimensions(uint32_t width, uint32_t height,
++                           mozilla::ErrorResult& aRv);
++  void SetScreenColorDepth(uint32_t depth, mozilla::ErrorResult& aRv);
 +
-   void GetWebExposedLocales(nsTArray<nsString>& aLocales);
- 
-   mozilla::dom::IntlUtils* GetIntlUtils(mozilla::ErrorResult& aRv);
+  public:
+   void Alert(nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aError);
+   void Alert(const nsAString& aMessage, nsIPrincipal& aSubjectPrincipal,
 diff --git a/dom/base/nsScreen.cpp b/dom/base/nsScreen.cpp
-index 78849001c5..dc329c8424 100644
+index 78849001c5..d27c51aa5a 100644
 --- a/dom/base/nsScreen.cpp
 +++ b/dom/base/nsScreen.cpp
-@@ -12,6 +12,8 @@
- #include "mozilla/dom/DocumentInlines.h"
- #include "mozilla/widget/ScreenManager.h"
- #include "nsCOMPtr.h"
+@@ -5,8 +5,10 @@
+ #include "nsScreen.h"
+ 
+ #include "MaskConfig.hpp"
 +#include "ScreenDimensionManager.h"
-+#include "nsContentUtils.h"
- #include "nsDeviceContext.h"
- #include "nsGlobalWindowInner.h"
- #include "nsGlobalWindowOuter.h"
-@@ -73,6 +75,26 @@ nsDeviceContext* nsScreen::GetDeviceContext() const {
+ 
+ #include "mozilla/GeckoBindings.h"
++#include "mozilla/dom/BrowsingContext.h"
+ #include "mozilla/dom/BrowsingContextBinding.h"
+ #include "mozilla/dom/Document.h"
+ #include "mozilla/dom/DocumentInlines.h"
+@@ -23,6 +25,19 @@
+ using namespace mozilla;
+ using namespace mozilla::dom;
+ 
++// Camoufox: the userContextId this screen's window belongs to, which is the key
++// per-context spoofing is stored under. 0 is both "default context" and the
++// global fallback slot, so an unkeyed lookup still finds a value.
++static uint32_t CamouUserContextId(nsPIDOMWindowInner* aWindow) {
++  if (!aWindow) {
++    return 0;
++  }
++  if (BrowsingContext* bc = aWindow->GetBrowsingContext()) {
++    return bc->OriginAttributesRef().mUserContextId;
++  }
++  return 0;
++}
++
+ nsScreen::nsScreen(nsPIDOMWindowInner* aWindow)
+     : DOMEventTargetHelper(aWindow) {}
+ 
+@@ -46,6 +61,12 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(nsScreen, DOMEventTargetHelper,
+                                    mScreenOrientation)
+ 
+ int32_t nsScreen::PixelDepth() {
++  // Camoufox: per-context colour depth wins over the global config, so
++  // contexts in one process can differ.
++  if (uint32_t depth = 0; ScreenDimensionManager::GetColorDepth(
++          CamouUserContextId(GetOwnerWindow()), depth)) {
++    return static_cast<int32_t>(depth);
++  }
+   if (auto value = MaskConfig::GetUint32("screen.colorDepth"))
+     return value.value();
+   if (auto value = MaskConfig::GetUint32("screen.pixelDepth"))
+@@ -73,6 +94,17 @@ nsDeviceContext* nsScreen::GetDeviceContext() const {
  }
  
  CSSIntRect nsScreen::GetRect() {
-+  // Check for per-context screen dimensions first
-+  if (nsPIDOMWindowOuter* outer = GetOuter()) {
-+    if (nsPIDOMWindowInner* inner = outer->GetCurrentInnerWindow()) {
-+      nsGlobalWindowInner* win = nsGlobalWindowInner::Cast(inner);
-+      if (win) {
-+        uint32_t userContextId = mozilla::dom::ScreenDimensionManager::GetUserContextIdFromWindow(win);
-+        int32_t w = 0, h = 0;
-+        if (mozilla::dom::ScreenDimensionManager::GetDimensions(userContextId, &w, &h)) {
-+          return {0, 0, w, h};
-+        }
-+      }
-+    }
++  // Camoufox: per-context size wins over the global config.
++  if (uint32_t w = 0, h = 0; ScreenDimensionManager::GetDimensions(
++          CamouUserContextId(GetOwnerWindow()), w, h)) {
++    return {0, 0, static_cast<int32_t>(w), static_cast<int32_t>(h)};
 +  }
-+
-+  // Fallback to global MaskConfig override
-+  if (auto height = MaskConfig::GetInt32("screen.height"),
-+      width = MaskConfig::GetInt32("screen.width");
-+      height && width) {
++  // Camoufox: report the spoofed screen size from the injected config.
++  if (auto width = MaskConfig::GetInt32("screen.width"),
++      height = MaskConfig::GetInt32("screen.height");
++      width && height) {
 +    return {0, 0, width.value(), height.value()};
 +  }
    // Return window inner rect to prevent fingerprinting.
    if (ShouldResistFingerprinting(RFPTarget::ScreenRect)) {
      return GetTopWindowInnerRectForRFP();
-@@ -105,6 +127,24 @@ CSSIntRect nsScreen::GetRect() {
+@@ -105,6 +137,15 @@ CSSIntRect nsScreen::GetRect() {
  }
  
  CSSIntRect nsScreen::GetAvailRect() {
-+  // Check for per-context screen avail dimensions first
-+  if (nsPIDOMWindowOuter* outer = GetOuter()) {
-+    if (nsPIDOMWindowInner* inner = outer->GetCurrentInnerWindow()) {
-+      nsGlobalWindowInner* win = nsGlobalWindowInner::Cast(inner);
-+      if (win) {
-+        uint32_t userContextId = mozilla::dom::ScreenDimensionManager::GetUserContextIdFromWindow(win);
-+        int32_t w = 0, h = 0;
-+        if (mozilla::dom::ScreenDimensionManager::GetDimensions(userContextId, &w, &h)) {
-+          int32_t availTop = 25;
-+          if (auto top = MaskConfig::GetInt32("screen.availTop"); top.has_value()) {
-+            availTop = top.value();
-+          }
-+          return {0, availTop, w, h - availTop};
-+        }
-+      }
-+    }
++  // Camoufox: the per-context API sets one size, so the available rect is the
++  // whole screen. That matches the generated fingerprints, whose availWidth /
++  // availHeight equal width / height, and keeps availWidth <= width true.
++  if (uint32_t w = 0, h = 0; ScreenDimensionManager::GetDimensions(
++          CamouUserContextId(GetOwnerWindow()), w, h)) {
++    return {0, 0, static_cast<int32_t>(w), static_cast<int32_t>(h)};
 +  }
-+
++  // Camoufox: report the spoofed available screen rect from the injected
++  // config.
    auto rect = MaskConfig::GetRect("screen.availLeft", "screen.availTop",
                                    "screen.availWidth", "screen.availHeight");
    if (rect.has_value()) {
 diff --git a/dom/webidl/Window.webidl b/dom/webidl/Window.webidl
-index 1aa2baa931..4f5479fc2e 100644
+index 1aa2baa931..cde7d1ba98 100644
 --- a/dom/webidl/Window.webidl
 +++ b/dom/webidl/Window.webidl
-@@ -929,6 +929,18 @@ partial interface Window {
-   readonly attribute IntlUtils intlUtils;
+@@ -985,6 +985,18 @@ partial interface Window {
+   undefined setNavigatorUserAgent(DOMString ua);
  };
  
-+// Screen dimension for per-context screen spoofing
++// Per-context screen dimension spoofing
 +partial interface Window {
-+  [Throws, Func="mozilla::dom::ScreenDimensionManager::IsFunctionEnabledForWebIDL"]
-+  undefined setScreenDimensions(long width, long height);
++  [Throws, Func="mozilla::dom::ScreenDimensionManager::IsDimensionsFunctionEnabledForWebIDL"]
++  undefined setScreenDimensions(unsigned long width, unsigned long height);
 +};
 +
-+// Screen color depth for per-context screen spoofing
++// Per-context screen colour depth spoofing
 +partial interface Window {
-+  [Throws, Func="mozilla::dom::ScreenDimensionManager::IsFunctionEnabledForWebIDL"]
-+  undefined setScreenColorDepth(long colorDepth);
++  [Throws, Func="mozilla::dom::ScreenDimensionManager::IsColorDepthFunctionEnabledForWebIDL"]
++  undefined setScreenColorDepth(unsigned long depth);
 +};
 +
- partial interface Window {
-   [SameObject, Replaceable]
-   readonly attribute VisualViewport visualViewport;
+ dictionary WindowPostMessageOptions : StructuredSerializeOptions {
+   USVString targetOrigin = "/";
+ };
 diff --git a/gfx/src/moz.build b/gfx/src/moz.build
 index 91fd96a691..03adf5d674 100644
 --- a/gfx/src/moz.build
@@ -390,34 +393,60 @@ index 06b86c6c75..9641c8457c 100644
  }
  
 diff --git a/layout/style/nsMediaFeatures.cpp b/layout/style/nsMediaFeatures.cpp
-index 5e39014539..fac13c27a7 100644
+index 5e39014539..341c6fc853 100644
 --- a/layout/style/nsMediaFeatures.cpp
 +++ b/layout/style/nsMediaFeatures.cpp
-@@ -22,6 +22,8 @@
- #include "nsContentUtils.h"
- #include "nsDeviceContext.h"
- #include "nsGlobalWindowOuter.h"
-+#include "nsGlobalWindowInner.h"
-+#include "mozilla/dom/ScreenDimensionManager.h"
- #include "nsIBaseWindow.h"
- #include "nsIDocShell.h"
- #include "nsIPrintSettings.h"
-@@ -62,6 +64,18 @@ static nsSize GetDeviceSize(const Document& aDocument) {
-     return GetSize(aDocument);
-   }
+@@ -4,6 +4,7 @@
  
-+  // Camoufox: per-context screen dimensions for CSS device-width/height queries
-+  if (nsPIDOMWindowInner* inner = aDocument.GetInnerWindow()) {
-+    nsGlobalWindowInner* win = nsGlobalWindowInner::Cast(inner);
-+    if (win) {
-+      uint32_t ucid = mozilla::dom::ScreenDimensionManager::GetUserContextIdFromWindow(win);
-+      int32_t w = 0, h = 0;
-+      if (mozilla::dom::ScreenDimensionManager::GetDimensions(ucid, &w, &h)) {
-+        return CSSPixel::ToAppUnits(CSSIntSize(w, h));
-+      }
+ /* the features that media queries can test */
+ 
++#include "MaskConfig.hpp"
+ #include "PreferenceSheet.h"
+ #include "mozilla/GeckoBindings.h"
+ #include "mozilla/LookAndFeel.h"
+@@ -12,10 +13,12 @@
+ #include "mozilla/StaticPrefs_gfx.h"
+ #include "mozilla/StyleSheet.h"
+ #include "mozilla/StyleSheetInlines.h"
++#include "mozilla/dom/BrowsingContext.h"
+ #include "mozilla/dom/BrowsingContextBinding.h"
+ #include "mozilla/dom/Document.h"
+ #include "mozilla/dom/DocumentInlines.h"
+ #include "mozilla/dom/ScreenBinding.h"
++#include "mozilla/dom/ScreenDimensionManager.h"
+ #include "mozilla/gfx/gfxVars.h"
+ #include "nsCSSProps.h"
+ #include "nsCSSValue.h"
+@@ -58,6 +61,32 @@ static nsSize GetSize(const Document& aDocument) {
+ 
+ // A helper for three features below.
+ static nsSize GetDeviceSize(const Document& aDocument) {
++  // Camoufox: per-context size first, for the same internal-consistency reason
++  // as the global override below -- CSS device-width has to agree with
++  // screen.width or the disagreement is itself the fingerprint.
++  if (nsPIDOMWindowInner* win = aDocument.GetInnerWindow()) {
++    uint32_t id = 0;
++    if (BrowsingContext* bc = win->GetBrowsingContext()) {
++      id = bc->OriginAttributesRef().mUserContextId;
++    }
++    if (uint32_t w = 0, h = 0;
++        ScreenDimensionManager::GetDimensions(id, w, h)) {
++      return CSSPixel::ToAppUnits(
++          CSSIntSize(static_cast<int32_t>(w), static_cast<int32_t>(h)));
 +    }
 +  }
 +
-   // Media queries in documents in an RDM pane should use the simulated
-   // device size.
-   Maybe<CSSIntSize> deviceSize =
++  // Camoufox: report the spoofed screen size for CSS device-width/height so
++  // they agree with screen.width/height (nsScreen::GetRect). This must run
++  // before the RFP early-return below, since Camoufox runs with
++  // ResistFingerprinting enabled and RFPTarget::CSSDeviceSize would otherwise
++  // return the real window size -- an internal-inconsistency lie signal.
++  if (auto width = MaskConfig::GetInt32("screen.width"),
++      height = MaskConfig::GetInt32("screen.height");
++      width && height) {
++    return CSSPixel::ToAppUnits(CSSIntSize(width.value(), height.value()));
++  }
++
+   if (aDocument.ShouldResistFingerprinting(RFPTarget::CSSDeviceSize)) {
+     return GetSize(aDocument);
+   }

@@ -219,7 +219,8 @@ export class PageAgent {
   }
 
   _linkClicked(sync, anchorElement) {
-    if (anchorElement.ownerGlobal.docShell !== this._docShell)
+    // Firefox 152 renamed `ownerGlobal` to `documentGlobal` on nodes.
+    if ((anchorElement.documentGlobal || anchorElement.ownerGlobal).docShell !== this._docShell)
       return;
     this._browserPage.emit('pageLinkClicked', { phase: sync ? 'after' : 'before' });
   }
@@ -386,9 +387,11 @@ export class PageAgent {
       nsFiles = await Promise.all(files.map(filePath => File.createFromFileName(filePath)));
     }
     unsafeObject.mozSetFileArray(nsFiles);
+    // The file picker's own shape (DispatchEvents(), HTMLInputElement.cpp).
+    // Upstream marks both cancelable and composed, which reads as synthetic.
     const events = [
-      new (frame.domWindow().Event)('input', { bubbles: true, cancelable: true, composed: true }),
-      new (frame.domWindow().Event)('change', { bubbles: true, cancelable: true, composed: true }),
+      new (frame.domWindow().Event)('input', { bubbles: true, composed: true }),
+      new (frame.domWindow().Event)('change', { bubbles: true }),
     ];
     for (const event of events)
       unsafeObject.dispatchEvent(event);
@@ -497,20 +500,26 @@ export class PageAgent {
   }
 
   async _dispatchTouchEvent({type, touchPoints, modifiers}) {
+    // Firefox 152+: windowUtils.sendTouchEvent (parallel-array API) was removed.
+    // Synthetic touch now goes through Window.synthesizeTouchEvent, which takes a
+    // sequence of SynthesizeTouchEventData objects. Mirrors upstream Playwright.
     const frame = this._frameTree.mainFrame();
-    const defaultPrevented = frame.domWindow().windowUtils.sendTouchEvent(
+    const defaultPrevented = frame.domWindow().synthesizeTouchEvent(
       type.toLowerCase(),
-      touchPoints.map((point, id) => id),
-      touchPoints.map(point => point.x),
-      touchPoints.map(point => point.y),
-      touchPoints.map(point => point.radiusX === undefined ? 1.0 : point.radiusX),
-      touchPoints.map(point => point.radiusY === undefined ? 1.0 : point.radiusY),
-      touchPoints.map(point => point.rotationAngle === undefined ? 0.0 : point.rotationAngle),
-      touchPoints.map(point => point.force === undefined ? 1.0 : point.force),
-      touchPoints.map(point => 0),
-      touchPoints.map(point => 0),
-      touchPoints.map(point => 0),
-      modifiers);
+      touchPoints.map((point, id) => ({
+        identifier: id,
+        offsetX: point.x,
+        offsetY: point.y,
+        radiiX: point.radiusX ?? 1.0,
+        radiiY: point.radiusY ?? 1.0,
+        rotationAngle: point.rotationAngle ?? 0.0,
+        pressure: point.force ?? 1.0,
+        tiltX: 0,
+        tiltY: 0,
+        twist: 0,
+      })),
+      modifiers
+    );
     return {defaultPrevented};
   }
 
@@ -574,6 +583,37 @@ export class PageAgent {
 
   async _insertText({text}) {
     const frame = this._frameTree.mainFrame();
+    const win = frame.domWindow();
+    const doc = win.document;
+    const active = doc.activeElement;
+    // Fast path: if focus is on an editable input/textarea, set the value
+    // directly and fire a single trusted-shape input event. This avoids the
+    // double `input` event we get from nsITextInputProcessor on Firefox 146
+    // (one for compositionupdate, one after compositionend), and matches the
+    // upstream test expectation of exactly one `input` event.
+    const isEditableField = active && (
+      (active.tagName === 'INPUT' && /^(text|search|url|tel|email|password|number|)$/i.test(active.type || '')) ||
+      active.tagName === 'TEXTAREA'
+    );
+    if (isEditableField) {
+      const start = active.selectionStart ?? active.value.length;
+      const end = active.selectionEnd ?? active.value.length;
+      const before = active.value.slice(0, start);
+      const after = active.value.slice(end);
+      active.value = before + text + after;
+      const caret = (before + text).length;
+      try { active.setSelectionRange(caret, caret); } catch (e) {}
+      const InputEvent = win.InputEvent;
+      active.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        cancelable: false,
+        composed: true,
+        inputType: 'insertText',
+        data: text,
+      }));
+      return;
+    }
+    // Fallback: contenteditable / other editing hosts use the TIP path.
     frame.textInputProcessor().commitCompositionWith(text);
   }
 

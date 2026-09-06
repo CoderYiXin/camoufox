@@ -78,13 +78,12 @@ install_rust() {
   # Rust cross-compilation targets the build needs. `mach configure` verifies it
   # can compile Rust for the build target; without the matching std target it
   # aborts with "Cannot compile for <target>". scripts/patch.py adds the aarch64
-  # and i686 Linux targets but NOT x86_64, so building the Linux x86_64 target
-  # fails without this. `rustup target add` is idempotent (no-op if already
+  # Linux target but NOT x86_64, so building the Linux x86_64 target fails
+  # without this. `rustup target add` is idempotent (no-op if already
   # present or if it is the host's native target).
   if have rustup; then
-    log "Ensuring Rust Linux cross-compile targets (x86_64/aarch64/i686)..."
+    log "Ensuring Rust Linux cross-compile targets (x86_64/aarch64)..."
     rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu \
-                      i686-unknown-linux-gnu \
       || warn "Could not add Rust Linux targets; if cross-compiling to Linux, run: rustup target add x86_64-unknown-linux-gnu"
   fi
 }

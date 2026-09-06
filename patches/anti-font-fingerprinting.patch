@@ -851,7 +851,7 @@ index e41408f51c..ffa0bd4caf 100644
  
  #include <algorithm>
  
-@@ -1465,6 +1469,36 @@ bool gfxHarfBuzzShaper::ShapeText(const char16_t* aText, uint32_t aOffset,
+@@ -1465,6 +1469,50 @@ bool gfxHarfBuzzShaper::ShapeText(const char16_t* aText, uint32_t aOffset,
  
    hb_shape(mHBFont, mBuffer, features.Elements(), features.Length());
  
@@ -870,18 +870,32 @@ index e41408f51c..ffa0bd4caf 100644
 +    hb_glyph_position_t* glyphPositions =
 +        hb_buffer_get_glyph_positions(mBuffer, &glyphCount);
 +
-+    hb_position_t cumulativeOffset = 0;
-+
-+    // Apply custom letter spacing
++    // Perturb ADVANCES only.
++    //
++    // x_offset/y_offset are the positioning offsets GPOS uses to place a glyph
++    // relative to the pen -- most importantly to park a combining mark over
++    // its base. They do not contribute to the measured width, so they add
++    // nothing to the metric we are perturbing, but layout never sees them:
++    // gfxTextRun stores advances, while painting honours the offsets. Feeding
++    // a running total into them paints every glyph a further `spacing` past
++    // where layout placed it and detaches every combining mark from its base.
++    // Scripts whose marks carry a zero advance -- Thai, Lao, Arabic,
++    // Devanagari, Hebrew -- collapse into stacked glyphs, while Latin merely
++    // looks slightly loose (daijro/camoufox#741).
++    //
++    // Zero-advance glyphs are skipped for the same reason: a combining mark is
++    // not a separate character, and widening it pushes the following base away
++    // and strands the mark. Every advancing glyph still gets +spacing, so the
++    // measured width -- the actual fingerprinting signal -- is perturbed
++    // exactly as before.
 +    for (uint32_t i = 0; i < glyphCount; ++i) {
 +      if (aVertical) {
-+        glyphPositions[i].y_advance -= spacing;
-+        glyphPositions[i].y_offset -= cumulativeOffset;
-+      } else {
++        if (glyphPositions[i].y_advance != 0) {
++          glyphPositions[i].y_advance -= spacing;
++        }
++      } else if (glyphPositions[i].x_advance != 0) {
 +        glyphPositions[i].x_advance += spacing;
-+        glyphPositions[i].x_offset += cumulativeOffset;
 +      }
-+      cumulativeOffset += spacing;
 +    }
 +  }
 +

@@ -314,20 +314,28 @@ index 96ed101921..aa78f0fe26 100644
  
  static bool ComputeLocalTime(time_t local, struct tm* ptm) {
    // Neither localtime_s nor localtime_r are required to act as if tzset has
-@@ -256,6 +257,12 @@ js::DateTimeInfo::DateTimeInfo() {
+@@ -256,6 +257,20 @@ js::DateTimeInfo::DateTimeInfo() {
  
  js::DateTimeInfo::~DateTimeInfo() = default;
  
 +js::DateTimeInfo::DateTimeInfo(const char* timezone) : DateTimeInfo() {
 +#if JS_HAS_INTL_API
 +  timeZoneOverride_ = timezone ? std::string(timezone) : std::string();
++
++  // Override instances bypass updateTimeZone()/resetState() (
++  // getOffsetMilliseconds calls them directly when a per-realm dtInfo is
++  // present), so seed the cache state as the upstream per-realm ctor did.
++  // Without this the RangeCache members are read uninitialized and
++  // getTimezoneOffset() intermittently returns 0 or garbage. (issue #657)
++  utcToLocalStandardOffsetSeconds_ = SecondsPerDay;
++  resetState();
 +#endif
 +}
 +
  int64_t js::DateTimeInfo::toClampedSeconds(int64_t milliseconds) {
    int64_t seconds = milliseconds / msPerSecond;
    int64_t millis = milliseconds % msPerSecond;
-@@ -586,6 +593,18 @@ JS_PUBLIC_API bool JS::SetTimeZoneOverride(const char* timeZoneId) {
+@@ -586,6 +601,18 @@ JS_PUBLIC_API bool JS::SetTimeZoneOverride(const char* timeZoneId) {
    return true;
  }
  

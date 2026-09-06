@@ -43,63 +43,63 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SPOOFED_TOUCH_POINTS = 5
 
 # ---------------------------------------------------------------------------
-# The recorded reference: a Dell XPS 15 9510 (Windows, touchscreen) on Firefox
-# 152.0, launched with {"navigator.maxTouchPoints": 5}.
+# The recorded reference: a Dell XPS 15 9510 (Windows 10, touchscreen) running
+# Firefox 152.0, captured with tests/assets/touch-reference.html.
 #
-# PROVENANCE -- READ BEFORE TRUSTING A PASS.
+#   UA        Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0)
+#             Gecko/20100101 Firefox/152.0
+#   platform  Win32          screen  1382x864 @ dpr 2.5
 #
-# These values were NOT captured from the reference machine. The original
-# recording is on the desktop of the i9 reference Windows box and was not
-# reachable from the build host, so they were reconstructed on 2026-09-05 from:
+# These are the sixteen static touch signals from that capture, verbatim. The
+# recording also carries 284 input events and eight context values (screen,
+# dpr, hardwareConcurrency, ...) which are not touch signals and are not
+# asserted here.
 #
-#   [spec]    stated directly in the task description
-#   [derived] fixed by Gecko's own gating logic in the 152.0 source, which
-#             determines what a real Windows touchscreen laptop must report:
-#               - dom.w3c_touch_events.enabled defaults to 2 (autodetect) on
-#                 non-Mac desktop, so a machine with a digitizer resolves it
-#                 true and exposes TouchEvent/Touch.
-#               - dom.w3c_touch_events.legacy_apis.enabled defaults to
-#                 @IS_ANDROID@, i.e. false on Windows, so the ontouchstart
-#                 handler attributes stay off the interfaces. That is what
-#                 makes TouchEvent=true alongside ontouchstart=false a
-#                 coherent desktop shape rather than a contradiction.
-#               - GetPointerCapabilities is asked separately for the primary
-#                 and the any- pointer, so the digitizer lands only in the
-#                 any- set while the trackpad keeps the primary one fine.
+# Two of these are easy to get wrong from first principles, so note them:
 #
-# When the Windows box is reachable, check the real capture against this table
-# and correct any disagreement here -- the capture wins, not this table.
+#   createTouch  is FALSE. document.createTouch is a legacy API gated by
+#     TouchEvent::LegacyAPIEnabled, the same gate as ontouchstart, and
+#     dom.w3c_touch_events.legacy_apis.enabled is false off Android. A real
+#     touchscreen laptop exposes TouchEvent while createTouch stays absent.
+#   PointerEvent is TRUE, and unconditionally so -- it is not gated on a
+#     digitizer at all. It is listed to pin that it must not start varying.
 # ---------------------------------------------------------------------------
 RECORDED: Dict[str, Any] = {
+    # --- touch API surface ---
+    "navigator.maxTouchPoints": SPOOFED_TOUCH_POINTS,
+    "'ontouchstart' in window": False,
+    "window.TouchEvent": True,
+    "window.Touch": True,
+    "document.createTouch": False,
+    "window.PointerEvent": True,
     # --- CSS pointer/hover media queries ---
-    "(pointer: fine)": True,                      # spec
-    "(pointer: coarse)": False,                   # spec
-    "(pointer: none)": False,                     # derived
-    "(any-pointer: fine)": True,                  # derived
-    "(any-pointer: coarse)": True,                # spec
-    "(any-pointer: none)": False,                 # derived
-    "(hover: hover)": True,                       # spec
-    "(hover: none)": False,                       # derived
-    "(any-hover: hover)": True,                   # spec
-    "(any-hover: none)": False,                   # derived
-    # --- Touch API surface ---
-    "navigator.maxTouchPoints": SPOOFED_TOUCH_POINTS,  # derived (echoes config)
-    "window.TouchEvent": True,                    # spec
-    "window.Touch": True,                         # spec
-    "'ontouchstart' in window": False,            # spec
-    "'ontouchstart' in document": False,          # derived
-    "'ontouchstart' in documentElement": False,   # derived
+    "(pointer: coarse)": False,
+    "(pointer: fine)": True,
+    "(pointer: none)": False,
+    "(any-pointer: coarse)": True,
+    "(any-pointer: fine)": True,
+    "(any-pointer: none)": False,
+    "(hover: hover)": True,
+    "(hover: none)": False,
+    "(any-hover: hover)": True,
+    "(any-hover: none)": False,
 }
 
-# Collected and printed, never asserted on. Both are consistent between a real
-# touchscreen laptop and this build, but neither belongs in the recorded set:
+# Collected and printed, never asserted on -- none of these is in the recording,
+# so there is no measured value to hold them to:
 #
-#   window.TouchList  shares TouchEvent's gate, so a real touchscreen laptop
-#     reports true -- but it is false on an unfixed build, which would make it
-#     a FOURTH failing signal when the task states there are exactly three.
-#   document.createEvent('TouchEvent')  gated by LegacyAPIEnabled, so it throws
-#     on desktop Windows and is false on both sides.
-INFORMATIONAL = ("window.TouchList", "document.createEvent('TouchEvent')")
+#   window.TouchList  shares TouchEvent's gate, so it tracks TouchEvent and
+#     flips with it. Worth seeing, but it would just restate that assertion.
+#   document.createEvent('TouchEvent')  gated by LegacyAPIEnabled, like
+#     createTouch, so it is false on desktop.
+#   'ontouchstart' on document / documentElement  the same mixin as the window
+#     one, printed to show all three agree.
+INFORMATIONAL = (
+    "window.TouchList",
+    "document.createEvent('TouchEvent')",
+    "'ontouchstart' in document",
+    "'ontouchstart' in documentElement",
+)
 
 # maxTouchPoints=0 must look exactly like a machine with no digitizer, or the
 # patch has leaked touch capability into every ordinary launch.
@@ -120,6 +120,8 @@ PROBE_JS = r"""() => {
   const mq = q => window.matchMedia(q).matches;
   let createEvent = false;
   try { createEvent = !!document.createEvent('TouchEvent'); } catch (e) { createEvent = false; }
+  let createTouch = false;
+  try { createTouch = typeof document.createTouch === 'function'; } catch (e) { createTouch = false; }
   return {
     "(pointer: fine)":       mq("(pointer: fine)"),
     "(pointer: coarse)":     mq("(pointer: coarse)"),
@@ -134,6 +136,8 @@ PROBE_JS = r"""() => {
     "navigator.maxTouchPoints":          navigator.maxTouchPoints,
     "window.TouchEvent":                 "TouchEvent" in window,
     "window.Touch":                      "Touch" in window,
+    "document.createTouch":              createTouch,
+    "window.PointerEvent":               "PointerEvent" in window,
     "'ontouchstart' in window":          "ontouchstart" in window,
     "'ontouchstart' in document":        "ontouchstart" in document,
     "'ontouchstart' in documentElement": "ontouchstart" in document.documentElement,
